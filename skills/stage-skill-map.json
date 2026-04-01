@@ -127,5 +127,8 @@
         "making-academic-presentations"
       ]
     }
+  },
+  "skillOrigins": {
+    "literature-driven-ideation": "local-import"
   }
 }

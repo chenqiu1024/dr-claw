@@ -73,6 +73,21 @@ export const api = {
     }),
   sessions: (projectName, limit = 5, offset = 0) =>
     authenticatedFetch(`/api/projects/${projectName}/sessions?limit=${limit}&offset=${offset}`),
+  projectTags: (projectName, tagType = null) => {
+    const params = new URLSearchParams();
+    if (tagType) {
+      params.append('tagType', tagType);
+    }
+    const query = params.toString();
+    return authenticatedFetch(`/api/projects/${projectName}/tags${query ? `?${query}` : ''}`);
+  },
+  sessionTags: (projectName, sessionId) =>
+    authenticatedFetch(`/api/projects/${projectName}/sessions/${sessionId}/tags`),
+  updateSessionTags: (projectName, sessionId, tagIds) =>
+    authenticatedFetch(`/api/projects/${projectName}/sessions/${sessionId}/tags`, {
+      method: 'PUT',
+      body: JSON.stringify({ tagIds }),
+    }),
   sessionMessages: (projectName, sessionId, limit = null, offset = 0, provider = 'claude') => {
     const params = new URLSearchParams();
     if (limit !== null) {
@@ -93,6 +108,13 @@ export const api = {
     }
     return authenticatedFetch(url);
   },
+  sessionContextReview: (projectName, sessionId) =>
+    authenticatedFetch(`/api/projects/${projectName}/sessions/${sessionId}/context-review`),
+  updateSessionContextReview: (projectName, sessionId, reviews) =>
+    authenticatedFetch(`/api/projects/${projectName}/sessions/${sessionId}/context-review`, {
+      method: 'PUT',
+      body: JSON.stringify({ reviews }),
+    }),
   renameProject: (projectName, displayName) =>
     authenticatedFetch(`/api/projects/${projectName}/rename`, {
       method: 'PUT',
@@ -352,6 +374,30 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(options),
     }),
+  },
+
+  // References (literature library) endpoints
+  references: {
+    list: (params) => authenticatedFetch(`/api/references?${new URLSearchParams(params || {})}`),
+    get: (id) => authenticatedFetch(`/api/references/${encodeURIComponent(id)}`),
+    delete: (id) => authenticatedFetch(`/api/references/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    getPdf: (id) => authenticatedFetch(`/api/references/${encodeURIComponent(id)}/pdf`),
+    syncZotero: ({ projectName, collectionKey, sourceIds } = {}) => authenticatedFetch('/api/references/sync/zotero', { method: 'POST', body: JSON.stringify({ projectName, collectionKey, sourceIds }) }),
+    zoteroItems: (params) => {
+      const qs = new URLSearchParams();
+      if (params?.collectionKey) qs.set('collectionKey', params.collectionKey);
+      if (params?.limit) qs.set('limit', String(params.limit));
+      if (params?.start) qs.set('start', String(params.start));
+      return authenticatedFetch(`/api/references/zotero/items?${qs}`);
+    },
+    importBibtex: (formData) => authenticatedFetch('/api/references/import/bibtex', { method: 'POST', body: formData, headers: {} }),
+    zoteroStatus: () => authenticatedFetch('/api/references/zotero/status'),
+    zoteroCollections: () => authenticatedFetch('/api/references/zotero/collections'),
+    projectRefs: (projectName) => authenticatedFetch(`/api/references/project/${encodeURIComponent(projectName)}`),
+    linkToProject: (projectName, refId) => authenticatedFetch(`/api/references/project/${encodeURIComponent(projectName)}/${encodeURIComponent(refId)}`, { method: 'POST' }),
+    unlinkFromProject: (projectName, refId) => authenticatedFetch(`/api/references/project/${encodeURIComponent(projectName)}/${encodeURIComponent(refId)}`, { method: 'DELETE' }),
+    bulkDelete: (ids) => authenticatedFetch('/api/references/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
+    tags: () => authenticatedFetch('/api/references/tags'),
   },
 
   // Generic GET method for any endpoint

@@ -24,6 +24,7 @@ type SidebarModalsProps = {
   onConfirmDeleteSession: () => void;
   showVersionModal: boolean;
   onCloseVersionModal: () => void;
+  onLaterVersionModal: () => void;
   releaseInfo: ReleaseInfo | null;
   currentVersion: string;
   latestVersion: string | null;
@@ -57,6 +58,7 @@ export default function SidebarModals({
   onConfirmDeleteSession,
   showVersionModal,
   onCloseVersionModal,
+  onLaterVersionModal,
   releaseInfo,
   currentVersion,
   latestVersion,
@@ -182,6 +184,7 @@ export default function SidebarModals({
       <VersionUpgradeModal
         isOpen={showVersionModal}
         onClose={onCloseVersionModal}
+        onLater={onLaterVersionModal}
         releaseInfo={releaseInfo}
         currentVersion={currentVersion}
         latestVersion={latestVersion}

@@ -4,7 +4,6 @@ interface FileAttachmentProps {
   file: File;
   onRemove: () => void;
   uploadProgress?: number;
-  error?: string;
 }
 
 function formatFileSize(bytes: number): string {
@@ -13,7 +12,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-const FileAttachment = ({ file, onRemove, uploadProgress, error }: FileAttachmentProps) => {
+const FileAttachment = ({ file, onRemove, uploadProgress }: FileAttachmentProps) => {
   const [preview, setPreview] = useState<string | undefined>(undefined);
   const isImage = file.type.startsWith('image/');
 
@@ -42,13 +41,6 @@ const FileAttachment = ({ file, onRemove, uploadProgress, error }: FileAttachmen
       {uploadProgress !== undefined && uploadProgress < 100 && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
           <div className="text-white text-xs">{uploadProgress}%</div>
-        </div>
-      )}
-      {error && (
-        <div className="absolute inset-0 bg-red-500/50 flex items-center justify-center">
-          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
         </div>
       )}
       <button

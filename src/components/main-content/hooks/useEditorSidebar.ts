@@ -19,20 +19,25 @@ export function useEditorSidebar({
   const [editorExpanded, setEditorExpanded] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const resizeHandleRef = useRef<HTMLDivElement | null>(null);
+  const projectRoot = selectedProject?.fullPath || selectedProject?.path || '';
 
   const handleFileOpen = useCallback(
     (filePath: string, diffInfo: DiffInfo | null = null) => {
       const normalizedPath = filePath.replace(/\\/g, '/');
+      const normalizedRoot = projectRoot.replace(/\\/g, '/').replace(/\/$/, '');
+      const relativePath = normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)
+        ? normalizedPath.slice(normalizedRoot.length + 1)
+        : filePath;
       const fileName = normalizedPath.split('/').pop() || filePath;
 
       setEditingFile({
         name: fileName,
-        path: filePath,
+        path: relativePath,
         projectName: selectedProject?.name,
         diffInfo,
       });
     },
-    [selectedProject?.name],
+    [projectRoot, selectedProject?.name],
   );
 
   const handleCloseEditor = useCallback(() => {

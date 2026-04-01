@@ -280,6 +280,22 @@
     "loading": "Loading...",
     "version": {
       "updateAvailable": "Update available: v{{version}}"
+    },
+    "zotero": {
+      "title": "Zotero Integration",
+      "addButton": "Configure",
+      "description": "Connect to Zotero to sync your literature library. The local app is auto-detected; for cloud access, provide your API key and user ID.",
+      "connected": "Connected via {{mode}}",
+      "notConnected": "Not connected — start Zotero desktop or configure API key below",
+      "apiDisabled": "Zotero is running but local API access is disabled. Enable it in Zotero → Settings → Advanced.",
+      "empty": "No Zotero Web API credentials configured. Local app will be auto-detected.",
+      "confirmDelete": "Delete this Zotero credential?",
+      "form": {
+        "apiKeyPlaceholder": "Zotero API Key",
+        "userIdPlaceholder": "Zotero User ID (numeric)",
+        "saveButton": "Save",
+        "howToCreate": "Create a Zotero API key at zotero.org/settings/keys"
+      }
     }
   },
   "tasks": {
@@ -325,6 +341,12 @@
       },
       "gemini": {
         "description": "Google Gemini AI CLI assistant"
+      },
+      "openrouter": {
+        "description": "Route to any model via OpenRouter API"
+      },
+      "local": {
+        "description": "Run open-source models on your own GPU"
       }
     },
     "connectionStatus": "Connection Status",

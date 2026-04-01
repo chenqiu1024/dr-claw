@@ -115,7 +115,8 @@
       "reports": "Survey Reports",
       "graphs": "Literature Graphs",
       "notes": "Survey Notes",
-      "tasks": "Stage Tasks"
+      "tasks": "Stage Tasks",
+      "references": "Reference Library"
     },
     "errors": {
       "loadFailed": "Failed to load survey data for this project."
@@ -378,7 +379,7 @@
     "updateFailed": "Update failed",
     "buttons": {
       "close": "Close",
-      "later": "Later",
+      "later": "Remind Me Later",
       "copyCommand": "Copy Command",
       "updateNow": "Update Now",
       "updating": "Updating..."

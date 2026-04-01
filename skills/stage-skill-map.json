@@ -83,6 +83,7 @@
       "inno-paper-writing",
       "inno-figure-gen",
       "inno-paper-reviewer",
+      "inno-rebuttal",
       "inno-humanizer",
       "inno-reference-audit",
       "inno-rclone-to-overleaf",
@@ -94,6 +95,7 @@
       "writing": [
         "inno-paper-writing",
         "inno-figure-gen",
+        "inno-rebuttal",
         "inno-humanizer",
         "scientific-writing",
         "ml-paper-writing",
@@ -101,6 +103,7 @@
       ],
       "analysis": [
         "inno-paper-reviewer",
+        "inno-rebuttal",
         "inno-reference-audit",
         "inno-deep-research"
       ],

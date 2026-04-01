@@ -1,5 +1,29 @@
 # Changelog
 
+## Dr. Claw v1.1.1 - 2026-03-30
+
+### Highlights
+- Added OpenRouter as a full agentic provider with restored tool-use history, persisted permissions, and corrected Codex token accounting in mixed-provider workflows.
+- Added a session context sidebar and review queue to make active session state and follow-up review work more visible in Chat.
+- Added explicit chat thinking controls for Codex and Gemini, including Codex reasoning effort selection plus Gemini 3 `thinkingLevel` and Gemini 2.5 `thinkingBudget` presets.
+- Improved chat runtime feedback with a dedicated "Running code" status, release reminder follow-up handling, and package/build fixes for the v1.1.1 line.
+
+### Commit Summary
+- Since `v1.1.0`, this release includes 14 non-merge commits covering provider expansion, chat UX, reasoning controls, release reminders, and follow-up bug fixes.
+
+### Notable PRs and topics
+- #114 OpenRouter full provider support and history restoration
+- #115 Codex context indicator semantics and lifetime token accounting fixes
+- #116 session context sidebar and review queue
+- #117 chat thinking controls for Codex and Gemini
+- release reminder snooze and follow-up release metadata fixes
+- running-code status feedback in chat
+
+### Validation
+- `npm run typecheck` passed.
+- `npm run build` passed.
+- Version metadata updated in `package.json` and `package-lock.json`.
+
 ## Dr. Claw v1.0.0 - 2026-03-17
 
 ### Highlights

@@ -2,9 +2,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MutableRefObject } from 'react';
 
 import { api, authenticatedFetch } from '../../../utils/api';
-import type { ChatMessage, Provider } from '../types/types';
+import { RESUMING_STATUS_TEXT } from '../types/types';
+import type { ChatMessage, Provider, TokenBudget } from '../types/types';
 import type { Project, ProjectSession } from '../../../types/app';
-import { readSessionTimerStart, safeLocalStorage } from '../utils/chatStorage';
+import { clearSessionTimerStart, readSessionTimerStart, safeLocalStorage } from '../utils/chatStorage';
 import {
   convertCursorSessionMessages,
   convertSessionMessages,
@@ -14,6 +15,8 @@ import {
 
 const MESSAGES_PER_PAGE = 20;
 const INITIAL_VISIBLE_MESSAGES = 100;
+/** Grace period for WebSocket status-check response before clearing stale resume state */
+const STATUS_VALIDATION_TIMEOUT_MS = 5000;
 
 type PendingViewSession = {
   sessionId: string | null;
@@ -100,7 +103,7 @@ export function useChatSessionState({
   const [isSystemSessionChange, setIsSystemSessionChange] = useState(false);
   const [canAbortSession, setCanAbortSession] = useState(false);
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
-  const [tokenBudget, setTokenBudget] = useState<Record<string, unknown> | null>(null);
+  const [tokenBudget, setTokenBudget] = useState<TokenBudget | null>(null);
   const [visibleMessageCount, setVisibleMessageCount] = useState(INITIAL_VISIBLE_MESSAGES);
   const [claudeStatus, setClaudeStatus] = useState<{ text: string; tokens: number; can_interrupt: boolean; startTime?: number } | null>(() => {
     if (!persistedInitialStartTime) {
@@ -108,16 +111,18 @@ export function useChatSessionState({
     }
 
     return {
-      text: 'Resuming...',
+      text: RESUMING_STATUS_TEXT,
       tokens: 0,
       can_interrupt: true,
       startTime: persistedInitialStartTime,
     };
   });
+  const [statusTextOverride, setStatusTextOverride] = useState<string | null>(null);
   const [allMessagesLoaded, setAllMessagesLoaded] = useState(false);
   const [isLoadingAllMessages, setIsLoadingAllMessages] = useState(false);
   const [loadAllJustFinished, setLoadAllJustFinished] = useState(false);
   const [showLoadAllOverlay, setShowLoadAllOverlay] = useState(false);
+  const [pendingStatusValidationSessionId, setPendingStatusValidationSessionId] = useState<string | null>(null);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isLoadingSessionRef = useRef(false);
@@ -132,6 +137,27 @@ export function useChatSessionState({
   const loadAllOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const createDiff = useMemo<DiffCalculator>(() => createCachedDiffCalculator(), []);
+
+  const pendingStatusValidationSessionIdRef = useRef(pendingStatusValidationSessionId);
+  useEffect(() => {
+    pendingStatusValidationSessionIdRef.current = pendingStatusValidationSessionId;
+  }, [pendingStatusValidationSessionId]);
+
+  const markSessionStatusCheckPending = useCallback((sessionId?: string | null) => {
+    if (!sessionId) {
+      return;
+    }
+
+    setPendingStatusValidationSessionId(sessionId);
+  }, []);
+
+  const resolveSessionStatusCheck = useCallback((sessionId?: string | null) => {
+    if (!sessionId) {
+      return;
+    }
+
+    setPendingStatusValidationSessionId((previous) => (previous === sessionId ? null : previous));
+  }, []);
 
   const loadSessionMessages = useCallback(
     async (projectName: string, sessionId: string, loadMore = false, provider: Provider | string = 'claude') => {
@@ -390,7 +416,9 @@ export function useChatSessionState({
           setTokenBudget(null);
           
           // Only set isLoading to false if it's NOT in the processingSessions set
-          const isProcessing = processingSessions?.has(selectedSession.id);
+          const isProcessing =
+            processingSessions?.has(selectedSession.id) ||
+            pendingStatusValidationSessionIdRef.current === selectedSession.id;
           if (!isProcessing) {
             setIsLoading(false);
           }
@@ -399,6 +427,7 @@ export function useChatSessionState({
         // Always check status if we have a websocket and a session, 
         // especially on initial load or reconnect.
         if (ws && selectedSession?.id) {
+          markSessionStatusCheckPending(selectedSession.id);
           sendMessage({
             type: 'check-session-status',
             sessionId: selectedSession.id,
@@ -465,6 +494,7 @@ export function useChatSessionState({
     loadSessionMessages,
     pendingViewSessionRef,
     resetStreamingState,
+    markSessionStatusCheckPending,
     selectedProject,
     selectedSession,
     sendMessage,
@@ -542,17 +572,18 @@ export function useChatSessionState({
     }
 
     const sessionProvider = selectedSession.__provider || 'claude';
-    if (sessionProvider !== 'claude') {
+    if (sessionProvider === 'cursor') {
+      setTokenBudget(null);
       return;
     }
 
     const fetchInitialTokenUsage = async () => {
       try {
-        const url = `/api/projects/${selectedProject.name}/sessions/${selectedSession.id}/token-usage`;
+        const url = `/api/projects/${selectedProject.name}/sessions/${selectedSession.id}/token-usage?provider=${encodeURIComponent(sessionProvider)}`;
         const response = await authenticatedFetch(url);
         if (response.ok) {
           const data = await response.json();
-          setTokenBudget(data);
+          setTokenBudget(data as TokenBudget);
         } else {
           setTokenBudget(null);
         }
@@ -632,7 +663,7 @@ export function useChatSessionState({
         }
 
         return {
-          text: previous?.text || 'Resuming...',
+          text: previous?.text || RESUMING_STATUS_TEXT,
           tokens: previous?.tokens || 0,
           can_interrupt: previous?.can_interrupt !== false,
           startTime: persistedStartTime,
@@ -640,20 +671,49 @@ export function useChatSessionState({
       });
     }
 
-    if (!processingSessions) {
-      if (persistedStartTime && !isLoading) {
-        setIsLoading(true);
-        setCanAbortSession(true);
-      }
-      return;
-    }
+    const isTrackedProcessing = Boolean(processingSessions?.has(activeViewSessionId));
+    const isAwaitingStatusValidation =
+      pendingStatusValidationSessionId === activeViewSessionId && Boolean(persistedStartTime);
+    const shouldBeProcessing = isTrackedProcessing || isAwaitingStatusValidation;
 
-    const shouldBeProcessing = processingSessions.has(activeViewSessionId) || Boolean(persistedStartTime);
     if (shouldBeProcessing && !isLoading) {
       setIsLoading(true);
       setCanAbortSession(true);
     }
-  }, [currentSessionId, isLoading, processingSessions, selectedSession?.id]);
+  }, [currentSessionId, isLoading, pendingStatusValidationSessionId, processingSessions, selectedSession?.id]);
+
+  useEffect(() => {
+    const activeViewSessionId = selectedSession?.id || currentSessionId;
+    if (!activeViewSessionId || pendingStatusValidationSessionId !== activeViewSessionId) {
+      return;
+    }
+
+    const persistedStartTime = readSessionTimerStart(activeViewSessionId);
+    if (!persistedStartTime || processingSessions?.has(activeViewSessionId)) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      if (processingSessions?.has(activeViewSessionId)) {
+        return;
+      }
+
+      const latestPersistedStartTime = readSessionTimerStart(activeViewSessionId);
+      if (latestPersistedStartTime !== persistedStartTime) {
+        return;
+      }
+
+      clearSessionTimerStart(activeViewSessionId);
+      setPendingStatusValidationSessionId((previous) => (previous === activeViewSessionId ? null : previous));
+      setClaudeStatus((previous) => (previous?.text === RESUMING_STATUS_TEXT ? null : previous));
+      setIsLoading(false);
+      setCanAbortSession(false);
+    }, STATUS_VALIDATION_TIMEOUT_MS);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [currentSessionId, pendingStatusValidationSessionId, processingSessions, selectedSession?.id]);
 
   // Show "Load all" overlay after a batch finishes loading, persist for 2s then hide
   const prevLoadingRef = useRef(false);
@@ -790,6 +850,8 @@ export function useChatSessionState({
     showLoadAllOverlay,
     claudeStatus,
     setClaudeStatus,
+    statusTextOverride,
+    setStatusTextOverride,
     createDiff,
     scrollContainerRef,
     scrollToBottom,
@@ -798,5 +860,6 @@ export function useChatSessionState({
     handleScroll,
     loadSessionMessages,
     loadCursorSessionMessages,
+    resolveSessionStatusCheck,
   };
 }

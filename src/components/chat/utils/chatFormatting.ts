@@ -123,45 +123,86 @@ export function formatFileTreeInContent(text: string): string {
 export function formatUsageLimitText(text: string) {
   try {
     if (typeof text !== 'string') return text;
-    
+
     // First apply file tree formatting
     let formattedText = formatFileTreeInContent(text);
 
     // Strip <thinking>...</thinking> blocks that appear inline in assistant messages
     formattedText = formattedText.replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, '');
 
-    return formattedText.replace(/Claude AI usage limit reached\|(\d{10,13})/g, (match, ts) => {
-      let timestampMs = parseInt(ts, 10);
-      if (!Number.isFinite(timestampMs)) return match;
-      if (timestampMs < 1e12) timestampMs *= 1000;
-      const reset = new Date(timestampMs);
-
-      const timeStr = new Intl.DateTimeFormat(undefined, {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      }).format(reset);
-
-      const offsetMinutesLocal = -reset.getTimezoneOffset();
-      const sign = offsetMinutesLocal >= 0 ? '+' : '-';
-      const abs = Math.abs(offsetMinutesLocal);
-      const offH = Math.floor(abs / 60);
-      const offM = abs % 60;
-      const gmt = `GMT${sign}${offH}${offM ? ':' + String(offM).padStart(2, '0') : ''}`;
-      const tzId = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
-      const cityRaw = tzId.split('/').pop() || '';
-      const city = cityRaw
-        .replace(/_/g, ' ')
-        .toLowerCase()
-        .replace(/\b\w/g, (char) => char.toUpperCase());
-      const tzHuman = city ? `${gmt} (${city})` : gmt;
-
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const dateReadable = `${reset.getDate()} ${months[reset.getMonth()]} ${reset.getFullYear()}`;
-
-      return `Claude usage limit reached. Your limit will reset at **${timeStr} ${tzHuman}** - ${dateReadable}`;
+    // Parse "Claude AI usage limit reached|<timestamp>" and show local reset time
+    const localTimezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC';
+    const USAGE_LIMIT_FALLBACK = 'AI usage limit reached. Please try again later.';
+    formattedText = formattedText.replace(/Claude AI usage limit reached\|(\d{10,13})/g, (_match, ts) => {
+      try {
+        const epoch = ts.length <= 10 ? Number(ts) * 1000 : Number(ts);
+        const resetDate = new Date(epoch);
+        if (Number.isNaN(resetDate.getTime())) return USAGE_LIMIT_FALLBACK;
+        const time = resetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const totalMinutes = Math.abs(resetDate.getTimezoneOffset());
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        const sign = resetDate.getTimezoneOffset() <= 0 ? '+' : '-';
+        const offset = `GMT${sign}${hours}${minutes ? `:${String(minutes).padStart(2, '0')}` : ''}`;
+        const date = resetDate.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+        return `AI usage limit reached. Your limit will reset at **${time} ${offset} (${localTimezone})** - ${date}`;
+      } catch {
+        return USAGE_LIMIT_FALLBACK;
+      }
     });
+
+    return formattedText;
   } catch {
     return text;
   }
+}
+
+// Re-export from shared module — single source of truth for both server and client
+import { splitLegacyGeminiThoughtContent } from '../../../../shared/geminiThoughtParser.js';
+export { splitLegacyGeminiThoughtContent };
+
+export function buildAssistantMessages(
+  content: string,
+  timestamp: Date | string | number,
+): Array<{ type: string; content: string; timestamp: Date | string | number; isThinking?: boolean }> {
+  const legacySegments = splitLegacyGeminiThoughtContent(content);
+  if (legacySegments) {
+    return legacySegments.map((segment) => ({
+      type: 'assistant',
+      content: segment.content,
+      timestamp,
+      ...(segment.isThinking ? { isThinking: true } : {}),
+    }));
+  }
+  return [{ type: 'assistant', content, timestamp }];
+}
+
+/**
+ * Returns the display label for a given provider.
+ * For OpenRouter, shows a prettified version of the selected model slug.
+ */
+export function getProviderDisplayName(provider: string): string {
+  if (provider === 'cursor') return 'Cursor';
+  if (provider === 'codex') return 'Codex';
+  if (provider === 'gemini') return 'Gemini';
+  if (provider === 'openrouter') {
+    const slug = localStorage.getItem('openrouter-model') || '';
+    if (slug) {
+      const afterSlash = slug.includes('/') ? slug.split('/').pop()! : slug;
+      return afterSlash
+        .replace(/-/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+    return 'OpenRouter';
+  }
+  if (provider === 'local') {
+    const model = localStorage.getItem('local-model') || '';
+    if (model) {
+      return model
+        .replace(/-/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+    return 'Local GPU';
+  }
+  return 'Claude';
 }

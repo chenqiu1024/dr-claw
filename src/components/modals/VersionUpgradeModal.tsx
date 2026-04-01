@@ -7,6 +7,7 @@ import type { InstallMode } from "../../hooks/useVersionCheck";
 interface VersionUpgradeModalProps {
     isOpen: boolean;
     onClose: () => void;
+    onLater: () => void;
     releaseInfo: ReleaseInfo | null;
     currentVersion: string;
     latestVersion: string | null;
@@ -16,6 +17,7 @@ interface VersionUpgradeModalProps {
 export default function VersionUpgradeModal({
     isOpen,
     onClose,
+    onLater,
     releaseInfo,
     currentVersion,
     latestVersion,
@@ -28,6 +30,7 @@ export default function VersionUpgradeModal({
     const [isUpdating, setIsUpdating] = useState(false);
     const [updateOutput, setUpdateOutput] = useState('');
     const [updateError, setUpdateError] = useState('');
+    const handleDismiss = updateOutput ? onClose : onLater;
     
     const handleUpdateNow = useCallback(async () => {
         setIsUpdating(true);
@@ -65,7 +68,7 @@ export default function VersionUpgradeModal({
             {/* Backdrop */}
             <button
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-                onClick={onClose}
+                onClick={handleDismiss}
                 aria-label={t('versionUpdate.ariaLabels.closeModal')}
             />
 
@@ -87,7 +90,7 @@ export default function VersionUpgradeModal({
                         </div>
                     </div>
                     <button
-                        onClick={onClose}
+                        onClick={handleDismiss}
                         className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,7 +171,7 @@ export default function VersionUpgradeModal({
                 {/* Actions */}
                 <div className="flex gap-2 pt-2">
                     <button
-                        onClick={onClose}
+                        onClick={handleDismiss}
                         className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
                     >
                         {updateOutput ? t('versionUpdate.buttons.close') : t('versionUpdate.buttons.later')}

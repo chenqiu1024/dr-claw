@@ -280,6 +280,22 @@
     "loading": "加载中...",
     "version": {
       "updateAvailable": "有可用更新：v{{version}}"
+    },
+    "zotero": {
+      "title": "Zotero 集成",
+      "addButton": "配置",
+      "description": "连接 Zotero 以同步您的文献库。本地应用会自动检测；如需云端访问，请提供 API Key 和用户 ID。",
+      "connected": "已通过 {{mode}} 连接",
+      "notConnected": "未连接 — 请启动 Zotero 桌面端或在下方配置 API Key",
+      "apiDisabled": "Zotero 正在运行，但本地 API 访问已禁用。请在 Zotero → 设置 → 高级 中启用。",
+      "empty": "尚未配置 Zotero Web API 凭据。本地应用将自动检测。",
+      "confirmDelete": "确定删除此 Zotero 凭据？",
+      "form": {
+        "apiKeyPlaceholder": "Zotero API Key",
+        "userIdPlaceholder": "Zotero 用户 ID（数字）",
+        "saveButton": "保存",
+        "howToCreate": "在 zotero.org/settings/keys 创建 Zotero API Key"
+      }
     }
   },
   "tasks": {
@@ -325,6 +341,12 @@
       },
       "gemini": {
         "description": "Google Gemini AI CLI 助手"
+      },
+      "openrouter": {
+        "description": "通过 OpenRouter API 路由到任意模型"
+      },
+      "local": {
+        "description": "在本地 GPU 上运行开源模型"
       }
     },
     "connectionStatus": "连接状态",

@@ -249,8 +249,12 @@ async function handleSearch(sourceName, req, res) {
       args.push('--keywords', config.keywords);
     }
 
-    // Build env — pass credentials if required
+    // Build env — pass credentials if required.
+    // Strip __PYVENV_LAUNCHER__ so uv-installed Python CLIs invoked by the
+    // search scripts find the correct stdlib (macOS Python framework sets this
+    // variable and it confuses child interpreters with a different version).
     const env = { ...process.env };
+    delete env.__PYVENV_LAUNCHER__;
     if (entry.requiresCredentials) {
       try {
         const credValue = credentialsDb.getActiveCredential(req.user.id, entry.credentialType);
@@ -364,8 +368,10 @@ router.post('/xhs-login', (req, res) => {
   }
   commandArgs.push('--json');
 
+  const xhsEnv = { ...process.env };
+  delete xhsEnv.__PYVENV_LAUNCHER__;
   const child = spawn('xhs', commandArgs, {
-    env: { ...process.env },
+    env: xhsEnv,
   });
 
   let stdoutBuf = '';

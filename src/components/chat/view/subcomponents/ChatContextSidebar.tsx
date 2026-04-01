@@ -1,0 +1,789 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ClipboardList,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  FileOutput,
+  FolderSearch,
+  Loader2,
+  type LucideIcon,
+} from 'lucide-react';
+
+import { cn } from '../../../../lib/utils';
+import { authenticatedFetch, api } from '../../../../utils/api';
+import type { Project, ProjectSession, SessionMode, SessionProvider } from '../../../../types/app';
+import type { ChatMessage } from '../../types/types';
+import { convertCursorSessionMessages, convertSessionMessages } from '../../utils/messageTransforms';
+import {
+  deriveSessionContextSummary,
+  mergeDistinctChatMessages,
+  type SessionContextFileItem,
+  type SessionContextOutputItem,
+  type SessionReviewState,
+} from '../../utils/sessionContextSummary';
+
+type ReviewFilter = 'all' | 'unread' | 'reviewed';
+type SidebarSectionKey = 'context' | 'tasks' | 'review';
+type SidebarSectionState = Record<SidebarSectionKey, boolean>;
+type SectionTone = 'context' | 'tasks' | 'review';
+
+const SIDEBAR_WIDTH_STORAGE_KEY = 'chat-session-context-width';
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'chat-session-context-collapsed';
+const SIDEBAR_SECTIONS_STORAGE_KEY = 'chat-session-context-sections';
+const DEFAULT_SIDEBAR_WIDTH = 480;
+const MIN_SIDEBAR_WIDTH = 360;
+const MAX_SIDEBAR_WIDTH = 840;
+const SECTION_STYLES: Record<SectionTone, {
+  panel: string;
+  glow: string;
+  icon: string;
+  count: string;
+}> = {
+  context: {
+    panel: 'border-emerald-200/70 bg-gradient-to-b from-emerald-50/40 via-background to-background dark:border-emerald-900/40 dark:from-emerald-950/10',
+    glow: 'from-emerald-300/60 via-emerald-200/20 to-transparent dark:from-emerald-700/50 dark:via-emerald-900/20',
+    icon: 'border-emerald-200/80 bg-emerald-50/95 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200',
+    count: 'border-emerald-200/80 bg-emerald-50/95 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200',
+  },
+  tasks: {
+    panel: 'border-sky-200/70 bg-gradient-to-b from-sky-50/35 via-background to-background dark:border-sky-900/40 dark:from-sky-950/10',
+    glow: 'from-sky-300/60 via-sky-200/20 to-transparent dark:from-sky-700/50 dark:via-sky-900/20',
+    icon: 'border-sky-200/80 bg-sky-50/95 text-sky-700 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-200',
+    count: 'border-sky-200/80 bg-sky-50/95 text-sky-700 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-200',
+  },
+  review: {
+    panel: 'border-amber-200/75 bg-gradient-to-b from-amber-50/35 via-background to-background dark:border-amber-900/40 dark:from-amber-950/10',
+    glow: 'from-amber-300/65 via-amber-200/20 to-transparent dark:from-amber-700/55 dark:via-amber-900/20',
+    icon: 'border-amber-200/80 bg-amber-50/95 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200',
+    count: 'border-amber-200/80 bg-amber-50/95 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200',
+  },
+};
+
+interface ChatContextSidebarProps {
+  selectedProject: Project | null;
+  selectedSession: ProjectSession | null;
+  currentSessionId: string | null;
+  provider: SessionProvider;
+  newSessionMode?: SessionMode;
+  chatMessages: ChatMessage[];
+  onFileOpen?: (filePath: string, diffInfo?: unknown) => void;
+}
+
+const formatTimeLabel = (value: string, locale?: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return date.toLocaleString(locale, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
+const ItemBadge = ({ children, tone = 'default' }: { children: ReactNode; tone?: 'default' | 'unread' }) => (
+  <span
+    className={cn(
+      'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium backdrop-blur-sm',
+      tone === 'unread'
+        ? 'border-amber-200/80 bg-amber-50/90 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200'
+        : 'border-border/70 bg-background/90 text-muted-foreground',
+    )}
+  >
+    {children}
+  </span>
+);
+
+const OpenFileButton = ({ title }: { title: string }) => (
+  <span
+    className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-border/70 bg-background/95 text-muted-foreground shadow-sm transition-colors group-hover:border-primary/30 group-hover:text-foreground"
+    title={title}
+  >
+    <ExternalLink className="h-3 w-3" />
+  </span>
+);
+
+const StatCard = ({
+  label,
+  value,
+  accentClassName,
+}: {
+  label: string;
+  value: ReactNode;
+  accentClassName: string;
+}) => (
+  <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-b from-background via-background to-muted/30 px-3 py-2.5 shadow-sm">
+    <div className={cn('absolute -right-4 -top-4 h-12 w-12 rounded-full blur-2xl opacity-45', accentClassName)} />
+    <div className={cn('absolute inset-x-0 top-0 h-px opacity-80', accentClassName)} />
+    <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
+    <div className="mt-1 truncate text-[15px] font-semibold tracking-tight text-foreground">{value}</div>
+  </div>
+);
+
+const SectionCountBadge = ({ count, tone }: { count: number; tone: SectionTone }) => (
+  <span className={cn('inline-flex min-w-[1.75rem] items-center justify-center rounded-full border px-2 py-0.5 text-[10px] font-semibold shadow-sm', SECTION_STYLES[tone].count)}>
+    {count}
+  </span>
+);
+
+const SectionHeader = ({
+  title,
+  count,
+  tone,
+  icon: Icon,
+  collapsed,
+  onToggle,
+  actions,
+}: {
+  title: string;
+  count: number;
+  tone: SectionTone;
+  icon: LucideIcon;
+  collapsed: boolean;
+  onToggle: () => void;
+  actions?: ReactNode;
+}) => (
+  <>
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
+      >
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className={cn('inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-xl border shadow-sm', SECTION_STYLES[tone].icon)}>
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-[12px] font-semibold tracking-[0.08em] text-foreground">{title}</span>
+            <SectionCountBadge count={count} tone={tone} />
+          </div>
+        </div>
+        {collapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+      </button>
+      {actions}
+    </div>
+    {!collapsed ? <div className={cn('mb-3 h-px bg-gradient-to-r', SECTION_STYLES[tone].glow)} /> : null}
+  </>
+);
+
+const ItemButton = ({
+  label,
+  secondaryLabel,
+  detail,
+  meta,
+  unread = false,
+  onClick,
+  compact = false,
+  action,
+}: {
+  label: string;
+  secondaryLabel?: string;
+  detail?: string;
+  meta?: ReactNode;
+  unread?: boolean;
+  onClick?: () => void;
+  compact?: boolean;
+  action?: ReactNode;
+}) => {
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="group w-full rounded-xl border border-border/60 bg-gradient-to-r from-background via-background to-muted/20 px-2.5 py-2 text-left shadow-sm transition-all hover:border-border hover:from-accent/20 hover:to-accent/10"
+      >
+        <div className="flex items-center gap-2.5">
+          <span className={cn('h-2 w-2 flex-shrink-0 rounded-full shadow-sm', unread ? 'bg-amber-500' : 'bg-emerald-500/80')} />
+          <div className="min-w-0 flex-1 truncate text-[12px] leading-5 text-foreground">
+            <span className="font-semibold">{label}</span>
+            {secondaryLabel ? <span className="text-[10px] text-muted-foreground">{` · ${secondaryLabel}`}</span> : null}
+          </div>
+          {meta ? <div className="flex flex-shrink-0 items-center gap-1 whitespace-nowrap pl-1">{meta}</div> : null}
+          {action ? <div className="flex-shrink-0">{action}</div> : null}
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group w-full rounded-xl border border-border/60 bg-gradient-to-r from-background via-background to-muted/20 px-3 py-2 text-left shadow-sm transition-all hover:border-border hover:from-accent/20 hover:to-accent/10"
+    >
+      <div className="flex items-start gap-2">
+        <span className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${unread ? 'bg-amber-500' : 'bg-emerald-500/70'}`} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1 line-clamp-1 break-all text-sm font-semibold leading-5 text-foreground">{label}</div>
+            {action ? <div className="flex-shrink-0">{action}</div> : null}
+          </div>
+          {secondaryLabel && (
+            <div className="mt-0.5 line-clamp-1 break-all text-[10px] text-muted-foreground">
+              {secondaryLabel}
+            </div>
+          )}
+          {detail && (
+            <div className="mt-0.5 line-clamp-1 text-[10px] leading-4 text-muted-foreground">
+              {detail}
+            </div>
+          )}
+          {meta && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {meta}
+            </div>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+};
+
+export default function ChatContextSidebar({
+  selectedProject,
+  selectedSession,
+  currentSessionId,
+  provider,
+  newSessionMode = 'research',
+  chatMessages,
+  onFileOpen,
+}: ChatContextSidebarProps) {
+  const { t, i18n } = useTranslation('chat');
+  const [fetchedMessages, setFetchedMessages] = useState<ChatMessage[]>([]);
+  const [isLoadingTrace, setIsLoadingTrace] = useState(false);
+  const [traceError, setTraceError] = useState<string | null>(null);
+  const [reviews, setReviews] = useState<SessionReviewState>({});
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_SIDEBAR_WIDTH;
+    }
+    const rawValue = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    const parsed = rawValue ? Number.parseInt(rawValue, 10) : NaN;
+    return Number.isFinite(parsed) ? Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed)) : DEFAULT_SIDEBAR_WIDTH;
+  });
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === '1';
+  });
+  const [collapsedSections, setCollapsedSections] = useState<SidebarSectionState>(() => {
+    if (typeof window === 'undefined') {
+      return { context: false, tasks: false, review: false };
+    }
+    try {
+      const rawValue = window.localStorage.getItem(SIDEBAR_SECTIONS_STORAGE_KEY);
+      const parsed = rawValue ? JSON.parse(rawValue) : null;
+      return {
+        context: parsed?.context === true,
+        tasks: parsed?.tasks === true,
+        review: parsed?.review === true,
+      };
+    } catch {
+      return { context: false, tasks: false, review: false };
+    }
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const asideRef = useRef<HTMLElement | null>(null);
+
+  const effectiveSessionId = selectedSession?.id || currentSessionId || null;
+  const effectiveProvider = (selectedSession?.__provider as SessionProvider | undefined) || provider;
+  const projectName = selectedProject?.name || '';
+  const projectPath = selectedProject?.fullPath || selectedProject?.path || '';
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFullTrace = async () => {
+      if (!selectedProject || !effectiveSessionId) {
+        setFetchedMessages([]);
+        setTraceError(null);
+        return;
+      }
+
+      setIsLoadingTrace(true);
+      setTraceError(null);
+
+      try {
+        if (effectiveProvider === 'cursor') {
+          const response = await authenticatedFetch(
+            `/api/cursor/sessions/${encodeURIComponent(effectiveSessionId)}?projectPath=${encodeURIComponent(projectPath)}`,
+          );
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+          const blobs = Array.isArray(data?.session?.messages) ? data.session.messages : [];
+          if (!cancelled) {
+            setFetchedMessages(convertCursorSessionMessages(blobs, projectPath));
+          }
+          return;
+        }
+
+        const response = await api.sessionMessages(projectName, effectiveSessionId, null, 0, effectiveProvider);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const rawMessages = Array.isArray(data?.messages) ? data.messages : [];
+        if (!cancelled) {
+          setFetchedMessages(convertSessionMessages(rawMessages));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setFetchedMessages([]);
+          setTraceError(error instanceof Error ? error.message : 'Failed to load full session trace.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingTrace(false);
+        }
+      }
+    };
+
+    void loadFullTrace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveProvider, effectiveSessionId, projectName, projectPath, selectedProject]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadReviews = async () => {
+      if (!selectedProject || !effectiveSessionId) {
+        setReviews({});
+        return;
+      }
+
+      try {
+        const response = await api.sessionContextReview(projectName, effectiveSessionId);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (!cancelled) {
+          setReviews(data?.reviews && typeof data.reviews === 'object' ? data.reviews : {});
+        }
+      } catch {
+        if (!cancelled) {
+          setReviews({});
+        }
+      }
+    };
+
+    void loadReviews();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveSessionId, projectName, selectedProject]);
+
+  const mergedMessages = useMemo(
+    () => mergeDistinctChatMessages(fetchedMessages, chatMessages),
+    [chatMessages, fetchedMessages],
+  );
+
+  const summary = useMemo(
+    () => deriveSessionContextSummary(mergedMessages, projectPath, reviews),
+    [mergedMessages, projectPath, reviews],
+  );
+
+  const filteredOutputFiles = useMemo(() => {
+    if (reviewFilter === 'unread') {
+      return summary.outputFiles.filter((item) => item.unread);
+    }
+    if (reviewFilter === 'reviewed') {
+      return summary.outputFiles.filter((item) => !item.unread);
+    }
+    return summary.outputFiles;
+  }, [reviewFilter, summary.outputFiles]);
+  const contextItemCount = summary.contextFiles.length + summary.directories.length + summary.skills.length;
+
+  const modeLabel = useMemo(() => {
+    const mode = selectedSession?.mode || newSessionMode;
+    return mode === 'workspace_qa' ? t('session.mode.workspaceQa') : t('session.mode.research');
+  }, [newSessionMode, selectedSession?.mode, t]);
+  const providerLabel = useMemo(() => {
+    if (effectiveProvider === 'codex') return t('messageTypes.codex');
+    if (effectiveProvider === 'cursor') return t('messageTypes.cursor');
+    if (effectiveProvider === 'gemini') return t('messageTypes.gemini');
+    return t('messageTypes.claude');
+  }, [effectiveProvider, t]);
+  const getTaskKindLabel = useCallback((kind: string) => {
+    if (kind === 'todo') return t('sessionContext.kinds.todo');
+    if (kind === 'skill') return t('sessionContext.kinds.skill');
+    if (kind === 'directory') return t('sessionContext.kinds.directory');
+    return t('sessionContext.kinds.task');
+  }, [t]);
+  const toggleCollapsed = useCallback(() => {
+    setIsCollapsed((current) => {
+      const nextValue = !current;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, nextValue ? '1' : '0');
+      }
+      return nextValue;
+    });
+  }, []);
+  const handleResizeStart = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  const persistReviews = useCallback(async (nextReviews: SessionReviewState) => {
+    setReviews(nextReviews);
+
+    if (!selectedProject || !effectiveSessionId) {
+      return;
+    }
+
+    try {
+      await api.updateSessionContextReview(projectName, effectiveSessionId, nextReviews);
+    } catch {
+      // Keep optimistic local state even if persistence fails.
+    }
+  }, [effectiveSessionId, projectName, selectedProject]);
+
+  const markFileReviewed = useCallback(async (file: SessionContextOutputItem) => {
+    const nextReviews: SessionReviewState = {
+      ...reviews,
+      [file.relativePath]: {
+        reviewedAt: new Date().toISOString(),
+        lastSeenAt: file.lastSeenAt,
+        lastReviewedSeenAt: file.lastSeenAt,
+      },
+    };
+    await persistReviews(nextReviews);
+  }, [persistReviews, reviews]);
+  const openContextFile = useCallback((file: SessionContextFileItem) => {
+    const openPath = file.absolutePath || file.relativePath;
+    onFileOpen?.(openPath);
+  }, [onFileOpen]);
+  const openReviewFile = useCallback(async (file: SessionContextOutputItem) => {
+    const openPath = file.absolutePath || file.relativePath;
+    if (file.unread) {
+      await markFileReviewed(file);
+    }
+    onFileOpen?.(openPath);
+  }, [markFileReviewed, onFileOpen]);
+  const toggleSection = useCallback((key: SidebarSectionKey) => {
+    setCollapsedSections((current) => {
+      const nextValue = { ...current, [key]: !current[key] };
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(SIDEBAR_SECTIONS_STORAGE_KEY, JSON.stringify(nextValue));
+      }
+      return nextValue;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) {
+      return undefined;
+    }
+
+    const handleMouseMove = (event: globalThis.MouseEvent) => {
+      const rightEdge = asideRef.current?.getBoundingClientRect().right ?? window.innerWidth;
+      const nextWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, rightEdge - event.clientX));
+      setSidebarWidth(nextWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  if (!selectedProject) {
+    return null;
+  }
+
+  return (
+    <>
+      {!isCollapsed && (
+        <div
+          onMouseDown={handleResizeStart}
+          className="hidden xl:block xl:w-1 xl:flex-shrink-0 xl:cursor-col-resize xl:bg-border/40 xl:transition-colors xl:hover:bg-primary/25"
+          title={t('sessionContext.actions.resize')}
+        />
+      )}
+
+      <aside
+        ref={asideRef}
+        className={`flex min-h-0 w-full flex-col border-t border-border/60 bg-gradient-to-b from-card via-card to-muted/20 backdrop-blur xl:flex-shrink-0 xl:border-l xl:border-t-0 ${
+          isCollapsed ? 'xl:w-[56px]' : ''
+        }`}
+        style={!isCollapsed ? { width: `${sidebarWidth}px` } : undefined}
+      >
+      <div className="border-b border-border/60 px-4 py-3.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold tracking-tight text-foreground">{t('sessionContext.title')}</div>
+            <div className="mt-1 max-w-[42ch] text-[11px] leading-5 text-muted-foreground">
+              {t('sessionContext.description')}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {isLoadingTrace && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-border/70 bg-background/85 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+              title={isCollapsed ? t('sessionContext.actions.expand') : t('sessionContext.actions.collapse')}
+            >
+              {isCollapsed ? <ChevronsLeft className="h-4 w-4" /> : <ChevronsRight className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+
+        {isCollapsed && (
+          <div className="mt-3 flex justify-center">
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-background/85 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+            title={t('sessionContext.actions.expand')}
+          >
+            <ChevronsLeft className="h-4 w-4" />
+          </button>
+          </div>
+        )}
+
+        {!isCollapsed && (
+          <>
+
+        <div className="mt-3 grid grid-cols-4 gap-2">
+          <StatCard label={t('sessionContext.stats.mode')} value={modeLabel} accentClassName="bg-emerald-400/70" />
+          <StatCard label={t('sessionContext.stats.provider')} value={providerLabel} accentClassName="bg-sky-400/70" />
+          <StatCard label={t('sessionContext.stats.contextFiles')} value={summary.contextFiles.length} accentClassName="bg-violet-400/70" />
+          <StatCard label={t('sessionContext.stats.unreadOutputs')} value={summary.unreadCount} accentClassName="bg-amber-400/70" />
+        </div>
+
+        {effectiveProvider === 'codex' && (
+          <div className="mt-3 rounded-2xl border border-amber-200/60 bg-amber-50/80 px-3 py-2.5 text-[11px] leading-5 text-amber-800 shadow-sm dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+            {t('sessionContext.codexNotice')}
+          </div>
+        )}
+
+        {traceError && (
+          <div className="mt-3 rounded-2xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-[11px] leading-5 text-destructive shadow-sm">
+            {t('sessionContext.traceError')}
+          </div>
+        )}
+          </>
+        )}
+      </div>
+
+      {isCollapsed ? (
+        <div className="flex flex-1 items-start justify-center p-3 xl:pt-4">
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-background/85 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+            title={t('sessionContext.actions.expand')}
+          >
+            <FolderSearch className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+        <section className={`rounded-[22px] border p-3.5 shadow-sm ${SECTION_STYLES.context.panel} ${collapsedSections.context ? '' : 'flex min-h-[220px] flex-1 flex-col overflow-hidden'}`}>
+          <SectionHeader
+            title={t('sessionContext.sections.injectedContext')}
+            count={contextItemCount}
+            tone="context"
+            icon={FolderSearch}
+            collapsed={collapsedSections.context}
+            onToggle={() => toggleSection('context')}
+          />
+          {!collapsedSections.context && (
+          <div className="min-h-0 space-y-2 overflow-y-auto pr-1">
+            {summary.contextFiles.length === 0 && summary.directories.length === 0 && summary.skills.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-border/60 bg-background/60 px-3 py-3 text-xs text-muted-foreground">
+                {t('sessionContext.empty.injectedContext')}
+              </div>
+            )}
+
+            {summary.contextFiles.slice(0, 6).map((file) => (
+              <ItemButton
+                key={file.key}
+                label={file.name}
+                secondaryLabel={file.relativePath}
+                compact
+                onClick={() => openContextFile(file)}
+                action={<OpenFileButton title={t('sessionContext.preview.open')} />}
+                meta={
+                  <>
+                    {file.reasons[0] ? <ItemBadge>{file.reasons[0]}</ItemBadge> : null}
+                    <ItemBadge>{file.count}x</ItemBadge>
+                    <ItemBadge>{formatTimeLabel(file.lastSeenAt, i18n.language)}</ItemBadge>
+                  </>
+                }
+              />
+            ))}
+
+            {summary.directories.slice(0, 3).map((entry) => (
+              <ItemButton
+                key={entry.key}
+                label={entry.label}
+                detail={entry.detail}
+                meta={<ItemBadge>{formatTimeLabel(entry.lastSeenAt, i18n.language)}</ItemBadge>}
+              />
+            ))}
+
+            {summary.skills.slice(0, 3).map((entry) => (
+              <ItemButton
+                key={entry.key}
+                label={entry.label}
+                detail={entry.detail}
+                meta={<ItemBadge>{formatTimeLabel(entry.lastSeenAt, i18n.language)}</ItemBadge>}
+              />
+            ))}
+          </div>
+          )}
+        </section>
+
+        <section className={`rounded-[22px] border p-3.5 shadow-sm ${SECTION_STYLES.tasks.panel}`}>
+          <SectionHeader
+            title={t('sessionContext.sections.taskContext')}
+            count={summary.tasks.length}
+            tone="tasks"
+            icon={ClipboardList}
+            collapsed={collapsedSections.tasks}
+            onToggle={() => toggleSection('tasks')}
+          />
+          {!collapsedSections.tasks && (
+          <div className="space-y-1.5">
+            {summary.tasks.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border/60 bg-background/60 px-3 py-3 text-xs text-muted-foreground">
+                {t('sessionContext.empty.taskContext')}
+              </div>
+            ) : (
+              summary.tasks.slice(0, 6).map((entry) => (
+              <div
+                  key={entry.key}
+                  className="rounded-xl border border-border/60 bg-gradient-to-r from-background via-background to-sky-50/20 px-2.5 py-2 shadow-sm dark:to-sky-950/10"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-sky-500/70" />
+                    <div className="min-w-0 flex-1 truncate text-[12px] font-semibold text-foreground">
+                      {entry.label}
+                    </div>
+                    {entry.detail ? (
+                      <div className="max-w-[140px] flex-shrink truncate text-[10px] text-muted-foreground">
+                        {entry.detail}
+                      </div>
+                    ) : null}
+                    <div className="flex flex-shrink-0 items-center gap-1 whitespace-nowrap">
+                      <ItemBadge>{getTaskKindLabel(entry.kind)}</ItemBadge>
+                      <ItemBadge>{formatTimeLabel(entry.lastSeenAt, i18n.language)}</ItemBadge>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          )}
+        </section>
+
+        <section className={`rounded-[22px] border p-3.5 shadow-sm ${SECTION_STYLES.review.panel} ${collapsedSections.review ? '' : 'flex min-h-[240px] flex-1 flex-col overflow-hidden'}`}>
+          <SectionHeader
+            title={t('sessionContext.sections.reviewQueue')}
+            count={filteredOutputFiles.length}
+            tone="review"
+            icon={FileOutput}
+            collapsed={collapsedSections.review}
+            onToggle={() => toggleSection('review')}
+            actions={!collapsedSections.review ? (
+            <div className="flex items-center gap-1 rounded-full border border-border/70 bg-muted/35 p-1 shadow-sm">
+              {([
+                { value: 'all', labelKey: 'sessionContext.filters.all' },
+                { value: 'unread', labelKey: 'sessionContext.filters.unread' },
+                { value: 'reviewed', labelKey: 'sessionContext.filters.reviewed' },
+              ] as Array<{ value: ReviewFilter; labelKey: string }>).map((filter) => (
+                <button
+                  key={filter.value}
+                  type="button"
+                  onClick={() => setReviewFilter(filter.value)}
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors ${
+                    reviewFilter === filter.value
+                      ? 'bg-foreground text-background shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {t(filter.labelKey)}
+                </button>
+              ))}
+            </div>
+            ) : undefined}
+          />
+
+          {!collapsedSections.review && (
+          <div className="min-h-0 space-y-2 overflow-y-auto pr-1">
+            {filteredOutputFiles.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border/60 bg-background/60 px-3 py-3 text-xs text-muted-foreground">
+                {t('sessionContext.empty.reviewQueue')}
+              </div>
+            ) : (
+              filteredOutputFiles.slice(0, 8).map((file) => (
+                <ItemButton
+                  key={file.key}
+                  label={file.name}
+                  secondaryLabel={file.relativePath}
+                  unread={file.unread}
+                  compact
+                  onClick={() => {
+                    void openReviewFile(file);
+                  }}
+                  action={<OpenFileButton title={t('sessionContext.preview.open')} />}
+                  meta={
+                    <>
+                      {file.reasons[0] ? <ItemBadge>{file.reasons[0]}</ItemBadge> : null}
+                      <ItemBadge>{file.count}x</ItemBadge>
+                      <ItemBadge>{formatTimeLabel(file.lastSeenAt, i18n.language)}</ItemBadge>
+                      <ItemBadge tone={file.unread ? 'unread' : 'default'}>{file.unread ? <><EyeOff className="mr-1 h-3 w-3" />{t('sessionContext.filters.unread')}</> : <><Eye className="mr-1 h-3 w-3" />{t('sessionContext.filters.reviewed')}</>}</ItemBadge>
+                    </>
+                  }
+                />
+              ))
+            )}
+          </div>
+          )}
+        </section>
+      </div>
+      )}
+    </aside>
+    </>
+  );
+}

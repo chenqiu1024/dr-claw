@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -228,6 +228,14 @@ const TASK_STATUS_META = {
   review: { label: 'Review', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
   deferred: { label: 'Deferred', className: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300' },
   cancelled: { label: 'Cancelled', className: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
+};
+const SESSION_TAG_SOURCE_META = {
+  manual: { label: 'Manual', className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
+  task_context: { label: 'Task Context', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
+  auto_research: { label: 'Auto Research', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
+  chat_context: { label: 'Chat Context', className: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300' },
+  inferred: { label: 'Inferred', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' }, // Reserved for future ML-based tag inference
+  unknown: { label: 'Tagged', className: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300' },
 };
 const ARTIFACT_STAGE_ORDER = [
   'Literature Survey',
@@ -1290,6 +1298,203 @@ function TaskPipelineBoard({ tasks, isLoading, onNavigateToChat, projectName, on
   );
 }
 
+function getSessionStageTags(sessionTags = []) {
+  return (Array.isArray(sessionTags) ? sessionTags : []).filter(
+    (tag) => tag?.tagType === 'stage'
+  );
+}
+
+function getSessionTagSourceMeta(source) {
+  return SESSION_TAG_SOURCE_META[source] || SESSION_TAG_SOURCE_META.unknown;
+}
+
+function getResearchLabSessionName(session) {
+  if (!session) return 'Session';
+  if (session.__provider === 'cursor') {
+    return normalizeString(session.name) || 'Untitled Session';
+  }
+  if (session.__provider === 'codex') {
+    return normalizeString(session.summary || session.name) || 'Codex Session';
+  }
+  if (session.__provider === 'gemini') {
+    return normalizeString(session.summary || session.name) || 'Gemini Session';
+  }
+  return normalizeString(session.summary || session.name) || 'New Session';
+}
+
+function getResearchLabSessionTime(session) {
+  return normalizeString(
+    session?.lastActivity || session?.createdAt || session?.created_at || session?.updated_at || ''
+  );
+}
+
+function SessionStageBoard({
+  projectTags,
+  sessions,
+  sessionTagsById,
+  savingSessionId,
+  onToggleStageTag,
+}) {
+  const stageTags = useMemo(() => {
+    const tags = (Array.isArray(projectTags) ? projectTags : []).filter(
+      (tag) => tag?.tagType === 'stage'
+    );
+    const byKey = new Map(tags.map((tag) => [tag.tagKey, tag]));
+    return PIPELINE_STAGE_KEYS.map((stageKey) => byKey.get(stageKey)).filter(Boolean);
+  }, [projectTags]);
+
+  const stageCounts = useMemo(() => {
+    const counts = {};
+    stageTags.forEach((tag) => {
+      counts[tag.tagKey] = 0;
+    });
+
+    sessions.forEach((session) => {
+      const sessionStageTags = getSessionStageTags(sessionTagsById[session.id] || session.tags);
+      const stageKeys = new Set(sessionStageTags.map((tag) => tag.tagKey).filter(Boolean));
+      stageKeys.forEach((stageKey) => {
+        if (Object.prototype.hasOwnProperty.call(counts, stageKey)) {
+          counts[stageKey] += 1;
+        }
+      });
+    });
+
+    return counts;
+  }, [sessions, sessionTagsById, stageTags]);
+
+  if (sessions.length === 0) {
+    return (
+      <div className="rounded-[30px] border border-border/60 bg-card/78 p-5 shadow-sm backdrop-blur">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-violet-200/70 bg-violet-50/90 text-violet-700 dark:border-violet-900/70 dark:bg-violet-950/30 dark:text-violet-300">
+            <MessageSquare className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold tracking-tight text-foreground">Session Stage Links</h3>
+            <p className="text-xs text-muted-foreground">Bind indexed sessions to one or more research stages.</p>
+          </div>
+        </div>
+        <div className="mt-4 rounded-2xl border border-dashed border-border/60 bg-background/60 px-4 py-5 text-sm text-muted-foreground">
+          No indexed sessions yet. Start a conversation in Chat, then come back to assign stages.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[30px] border border-border/60 bg-card/78 p-5 shadow-sm backdrop-blur">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-violet-200/70 bg-violet-50/90 text-violet-700 dark:border-violet-900/70 dark:bg-violet-950/30 dark:text-violet-300">
+          <MessageSquare className="w-5 h-5" />
+        </div>
+        <div>
+          <h3 className="text-base font-semibold tracking-tight text-foreground">Session Stage Links</h3>
+          <p className="text-xs text-muted-foreground">
+            A session can belong to multiple stages, and each stage can contain multiple sessions.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        {stageTags.map((tag) => {
+          const stageKey = tag.tagKey;
+          const meta = TASK_STAGE_META[stageKey] || TASK_STAGE_META.unassigned;
+          return (
+            <div key={tag.id} className="rounded-2xl border border-border/60 bg-background/70 px-3 py-3 shadow-sm">
+              <div className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.className}`}>
+                {tag.label}
+              </div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{stageCounts[stageKey] || 0}</div>
+              <div className="text-xs text-muted-foreground">linked sessions</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {sessions.map((session) => {
+          const currentTags = sessionTagsById[session.id] || session.tags || [];
+          const selectedStageTagIds = new Set(getSessionStageTags(currentTags).map((tag) => tag.id));
+          const selectedStageTags = getSessionStageTags(currentTags);
+          const sessionName = getResearchLabSessionName(session);
+          const isSaving = savingSessionId === session.id;
+
+          return (
+            <div key={`${session.__provider}-${session.id}`} className="rounded-2xl border border-border/60 bg-background/75 p-4 shadow-sm">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-foreground">{sessionName}</span>
+                    <span className="rounded-full border border-border/60 bg-background/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                      {session.__provider || 'claude'}
+                    </span>
+                    {session.mode ? (
+                      <span className="rounded-full border border-border/60 bg-background/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {session.mode === 'workspace_qa' ? 'Workspace Q&A' : 'Research'}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {getResearchLabSessionTime(session) || 'No activity timestamp'}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {stageTags.map((tag) => {
+                    const stageKey = tag.tagKey;
+                    const meta = TASK_STAGE_META[stageKey] || TASK_STAGE_META.unassigned;
+                    const isSelected = selectedStageTagIds.has(tag.id);
+                    return (
+                      <button
+                        key={`${session.id}-${tag.id}`}
+                        type="button"
+                        onClick={() => onToggleStageTag(session, tag)}
+                        disabled={isSaving}
+                        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          isSelected
+                            ? meta.className
+                            : 'border-border/70 bg-background/80 text-muted-foreground hover:border-foreground/20 hover:text-foreground'
+                        } ${isSaving ? 'cursor-wait opacity-70' : ''}`}
+                      >
+                        {tag.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {selectedStageTags.length > 0 ? selectedStageTags.map((tag) => {
+                  const stageKey = tag.tagKey;
+                  const stageMeta = TASK_STAGE_META[stageKey] || TASK_STAGE_META.unassigned;
+                  const sourceMeta = getSessionTagSourceMeta(tag.source);
+                  return (
+                    <div
+                      key={`selected-${session.id}-${tag.id}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/80 px-1.5 py-1"
+                    >
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${stageMeta.className}`}>
+                        {tag.label}
+                      </span>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${sourceMeta.className}`}>
+                        {sourceMeta.label}
+                      </span>
+                    </div>
+                  );
+                }) : (
+                  <div className="text-xs text-muted-foreground">
+                    No stage tags yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Research artifacts grouped by pipeline stage */
 function ArtifactsCard({ artifacts, onSelect, selectedPath }) {
   const [openStages, setOpenStages] = useState({});
@@ -2162,6 +2367,9 @@ function ResearchLab({ selectedProject, onNavigateToChat }) {
   const [config, setConfig] = useState(null);
   const [artifacts, setArtifacts] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [projectTags, setProjectTags] = useState([]);
+  const [sessionTagsById, setSessionTagsById] = useState({});
+  const [savingSessionId, setSavingSessionId] = useState(null);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [projectFileSet, setProjectFileSet] = useState(null);
   const [selectedFile, setSelectedFileRaw] = useState(null);
@@ -2181,6 +2389,55 @@ function ResearchLab({ selectedProject, onNavigateToChat }) {
     setSelectedFileRaw(null);
   }, [projectIdentity]);
 
+  const projectSessions = useMemo(() => {
+    if (!selectedProject) {
+      return [];
+    }
+
+    const sessions = [
+      ...(selectedProject.sessions || []).map((session) => ({ ...session, __provider: 'claude' })),
+      ...(selectedProject.cursorSessions || []).map((session) => ({ ...session, __provider: 'cursor' })),
+      ...(selectedProject.codexSessions || []).map((session) => ({ ...session, __provider: 'codex' })),
+      ...(selectedProject.geminiSessions || []).map((session) => ({ ...session, __provider: 'gemini' })),
+    ];
+
+    return sessions.sort((left, right) => {
+      const leftTime = new Date(getResearchLabSessionTime(left) || 0).getTime();
+      const rightTime = new Date(getResearchLabSessionTime(right) || 0).getTime();
+      return rightTime - leftTime;
+    });
+  }, [
+    selectedProject,
+    selectedProject?.sessions,
+    selectedProject?.cursorSessions,
+    selectedProject?.codexSessions,
+    selectedProject?.geminiSessions,
+  ]);
+
+  const prevProjectIdentityRef = useRef(projectIdentity);
+  useEffect(() => {
+    const isProjectSwitch = prevProjectIdentityRef.current !== projectIdentity;
+    prevProjectIdentityRef.current = projectIdentity;
+
+    setSessionTagsById((current) => {
+      if (isProjectSwitch) {
+        const next = {};
+        projectSessions.forEach((session) => {
+          next[session.id] = Array.isArray(session.tags) ? session.tags : [];
+        });
+        return next;
+      }
+      // Merge: preserve locally-managed tags (optimistic updates), add new sessions only
+      const next = { ...current };
+      projectSessions.forEach((session) => {
+        if (!Object.prototype.hasOwnProperty.call(next, session.id)) {
+          next[session.id] = Array.isArray(session.tags) ? session.tags : [];
+        }
+      });
+      return next;
+    });
+  }, [projectIdentity, projectSessions]);
+
   const loadData = useCallback(async () => {
     if (!projectName) {
       setInstance(null);
@@ -2188,6 +2445,7 @@ function ResearchLab({ selectedProject, onNavigateToChat }) {
       setConfig(null);
       setArtifacts([]);
       setTasks([]);
+      setProjectTags([]);
       setProjectFileSet(null);
       return;
     }
@@ -2197,12 +2455,15 @@ function ResearchLab({ selectedProject, onNavigateToChat }) {
     setResearchBrief(null);
     setConfig(null);
     try {
-      const [tasksResponse, filesResponse] = await Promise.all([
+      const [tasksResponse, filesResponse, tagsResponse] = await Promise.all([
         api.get(`/taskmaster/tasks/${encodeURIComponent(projectName)}`).catch(() => null),
         api.getFiles(projectName),
+        api.projectTags(projectName, 'stage').catch(() => null),
       ]);
       const taskData = tasksResponse && tasksResponse.ok ? await tasksResponse.json() : null;
       setTasks(Array.isArray(taskData?.tasks) ? taskData.tasks : []);
+      const tagsData = tagsResponse && tagsResponse.ok ? await tagsResponse.json() : null;
+      setProjectTags(Array.isArray(tagsData?.tags) ? tagsData.tags : []);
 
       // Load file tree and collect log artifacts from new layout + legacy cache
       const filesRawText = filesResponse?.ok ? await filesResponse.text() : '[]';
@@ -2327,6 +2588,46 @@ function ResearchLab({ selectedProject, onNavigateToChat }) {
   const liveStageCount = pipelineStageOverview.filter((stage) => stage.total > 0 || stage.artifacts > 0).length;
   const hasPaperPreview = projectFileSet?.has('Publication/paper/main.pdf');
   const hasContent = instance || researchBrief || config || artifacts.length > 0 || tasks.length > 0;
+  const handleToggleSessionStageTag = useCallback(async (session, tag) => {
+    if (!projectName || !session?.id || !tag?.id) {
+      return;
+    }
+
+    const currentTags = Array.isArray(sessionTagsById[session.id]) ? sessionTagsById[session.id] : [];
+    const nextTagIds = currentTags.some((currentTag) => currentTag.id === tag.id)
+      ? currentTags.filter((currentTag) => currentTag.id !== tag.id).map((currentTag) => currentTag.id)
+      : [...currentTags.map((currentTag) => currentTag.id), tag.id];
+
+    setSavingSessionId(session.id);
+    try {
+      const response = await api.updateSessionTags(projectName, session.id, nextTagIds);
+      if (!response.ok) {
+        throw new Error(`Failed to update session tags: ${response.status}`);
+      }
+
+      const payload = await response.json();
+      const nextTags = Array.isArray(payload?.tags) ? payload.tags : [];
+      setSessionTagsById((current) => ({
+        ...current,
+        [session.id]: nextTags,
+      }));
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('session-tags-updated', {
+          detail: {
+            projectName,
+            sessionId: session.id,
+            provider: session.__provider || 'claude',
+            tags: nextTags,
+          },
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to update session stage tags:', error);
+    } finally {
+      setSavingSessionId(null);
+    }
+  }, [projectName, sessionTagsById]);
   const sidebar = (
     <div className="space-y-4">
       <ArtifactsCard
@@ -2525,6 +2826,14 @@ function ResearchLab({ selectedProject, onNavigateToChat }) {
                 onNavigateToChat={onNavigateToChat}
                 projectName={projectName}
                 onTaskUpdated={loadData}
+              />
+
+              <SessionStageBoard
+                projectTags={projectTags}
+                sessions={projectSessions}
+                sessionTagsById={sessionTagsById}
+                savingSessionId={savingSessionId}
+                onToggleStageTag={handleToggleSessionStageTag}
               />
 
               <IdeaCard

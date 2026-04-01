@@ -107,6 +107,12 @@
     "capabilities": ["evaluation-benchmarking"],
     "domains": ["general"]
   },
+  "inno-rebuttal": {
+    "primaryIntent": "evaluation",
+    "intents": ["evaluation", "writing"],
+    "capabilities": ["evaluation-benchmarking"],
+    "domains": ["cs-ai", "vision"]
+  },
   "inno-paper-writing": {
     "primaryIntent": "writing",
     "intents": ["writing", "research"],

@@ -191,6 +191,19 @@ function CodeEditor({ file, onClose, projectPath, selectedProject = null, onStar
   const isUnsupported = useMemo(() => UNSUPPORTED_EXTENSIONS.has(fileExt), [fileExt]);
   const isBinary = isPdf || isImage;
   const [blobUrl, setBlobUrl] = useState(null);
+  const absoluteFilePath = useMemo(() => {
+    if (!file?.path) {
+      return '';
+    }
+    if (file.path.startsWith('/')) {
+      return file.path;
+    }
+    const normalizedProjectPath = String(projectPath || '').replace(/\\/g, '/').replace(/\/$/, '');
+    if (!normalizedProjectPath) {
+      return file.path;
+    }
+    return `${normalizedProjectPath}/${String(file.path).replace(/^\.?\//, '')}`;
+  }, [file?.path, projectPath]);
 
   const canStartWorkspaceQa = Boolean(selectedProject && onStartWorkspaceQa);
 
@@ -482,7 +495,7 @@ function CodeEditor({ file, onClose, projectPath, selectedProject = null, onStar
 
         // Binary files (PDF, image): fetch as blob
         if (isBinary) {
-          const blob = await api.getFileContentBlob(file.projectName, file.path);
+          const blob = await api.getFileContentBlob(file.projectName, absoluteFilePath);
           const url = URL.createObjectURL(blob);
           setBlobUrl(url);
           setLoading(false);
@@ -533,7 +546,7 @@ function CodeEditor({ file, onClose, projectPath, selectedProject = null, onStar
     return () => {
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [file, projectPath, isBinary, isUnsupported, resolvedPath]);
+  }, [absoluteFilePath, file, projectPath, isBinary, isUnsupported, resolvedPath]);
 
   const handleSave = async () => {
     setSaving(true);

@@ -17,6 +17,7 @@ interface AgentTurnContainerProps {
   showThinking?: boolean;
   selectedProject: Project;
   provider: Provider | string;
+  onRetry?: () => void;
 }
 
 export default function AgentTurnContainer({
@@ -31,6 +32,7 @@ export default function AgentTurnContainer({
   showThinking,
   selectedProject,
   provider,
+  onRetry,
 }: AgentTurnContainerProps) {
   const { t } = useTranslation('chat');
 
@@ -50,6 +52,7 @@ export default function AgentTurnContainer({
       hideThinkingFold={hideThinkingFold}
       selectedProject={selectedProject}
       provider={provider}
+      onRetry={onRetry}
     />
   );
 

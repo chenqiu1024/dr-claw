@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronRight,
   Sparkles,
+  Library,
 } from 'lucide-react';
 
 import { Button } from '../../ui/button';
@@ -25,9 +26,12 @@ import type { Project } from '../../../types/app';
 import { useSurveyData, type SurveyFile, type SurveyTask } from '../hooks/useSurveyData';
 import MermaidDiagramViewer from './MermaidDiagramViewer';
 import { saveSurveyDiagramSource } from '../utils/diagramWindow';
+import ReferencesPanel from '../../references/view/ReferencesPanel';
+import type { Reference } from '../../references/types';
 
 type SurveyPageProps = {
   selectedProject: Project;
+  onChatFromReference?: (ref: Reference) => void;
 };
 
 type SelectedItem =
@@ -358,7 +362,7 @@ function PreviewContent({
   );
 }
 
-export default function SurveyPage({ selectedProject }: SurveyPageProps) {
+export default function SurveyPage({ selectedProject, onChatFromReference }: SurveyPageProps) {
   const { t } = useTranslation('common');
   const { papers, reports, graphs, notes, tasks, loading, error, refresh } = useSurveyData(selectedProject);
   const [selectedItem, setSelectedItem] = useState<SelectedItem>(null);
@@ -373,6 +377,7 @@ export default function SurveyPage({ selectedProject }: SurveyPageProps) {
   const [collapsedPanels, setCollapsedPanels] = useState({
     tasks: false,
     library: false,
+    references: true,
     preview: false,
   });
   const [collapsedSections, setCollapsedSections] = useState({
@@ -675,6 +680,17 @@ export default function SurveyPage({ selectedProject }: SurveyPageProps) {
                   </div>
                 </CollapsiblePanel>
               </div>
+
+              <CollapsiblePanel
+                title={t('surveyPage.sections.references')}
+                collapsed={collapsedPanels.references}
+                onToggle={() => togglePanel('references')}
+                accentClassName="bg-purple-500/70"
+              >
+                <div className="p-3">
+                  <ReferencesPanel projectName={selectedProject.name} onChatFromReference={onChatFromReference} />
+                </div>
+              </CollapsiblePanel>
 
               <div ref={previewPaneRef}>
                 <PreviewPane

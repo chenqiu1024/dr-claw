@@ -148,17 +148,6 @@ export default function SidebarHeader({
 
             <Button
               type="button"
-              variant={activeTab === 'trash' ? 'secondary' : 'outline'}
-              size="sm"
-              className="h-9 w-full justify-start rounded-xl"
-              onClick={onOpenTrash}
-            >
-              <Trash2 className="h-4 w-4" />
-              {t('common:tabs.trash')}
-            </Button>
-
-            <Button
-              type="button"
               variant={activeTab === 'news' ? 'secondary' : 'outline'}
               size="sm"
               className="h-9 w-full justify-start rounded-xl"
@@ -177,6 +166,17 @@ export default function SidebarHeader({
             >
               <Blocks className="h-4 w-4" />
               {t('common:projectDashboard.skillsTitle')}
+            </Button>
+
+            <Button
+              type="button"
+              variant={activeTab === 'trash' ? 'secondary' : 'outline'}
+              size="sm"
+              className="h-9 w-full justify-start rounded-xl"
+              onClick={onOpenTrash}
+            >
+              <Trash2 className="h-4 w-4" />
+              {t('common:tabs.trash')}
             </Button>
           </div>
         )}

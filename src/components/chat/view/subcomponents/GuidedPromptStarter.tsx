@@ -7,11 +7,13 @@ import {
 } from '../../constants/guidedPromptScenarios';
 import { api } from '../../../../utils/api';
 import { useAuth } from '../../../../contexts/AuthContext';
+import type { AttachedPrompt } from '../../types/types';
 
 interface GuidedPromptStarterProps {
   projectName: string;
   setInput: React.Dispatch<React.SetStateAction<string>>;
   textareaRef: React.RefObject<HTMLTextAreaElement>;
+  setAttachedPrompt?: (prompt: AttachedPrompt | null) => void;
 }
 
 interface SkillTreeNode {
@@ -38,6 +40,7 @@ export default function GuidedPromptStarter({
   projectName: _projectName,
   setInput,
   textareaRef,
+  setAttachedPrompt,
 }: GuidedPromptStarterProps) {
   const { t } = useTranslation('chat');
   const { user } = useAuth();
@@ -92,14 +95,28 @@ export default function GuidedPromptStarter({
 
   const injectTemplate = (scenario: GuidedPromptScenario, skills: string[]) => {
     const nextValue = buildTemplate(t, scenario, skills);
-    setInput(nextValue);
-    setTimeout(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      const cursor = nextValue.length;
-      el.setSelectionRange(cursor, cursor);
-    }, 100);
+    if (setAttachedPrompt) {
+      setAttachedPrompt({
+        scenarioId: scenario.id,
+        scenarioIcon: scenario.icon,
+        scenarioTitle: t(scenario.titleKey),
+        promptText: nextValue,
+      });
+      setTimeout(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+      }, 100);
+    } else {
+      setInput(prev => prev ? `${nextValue}\n\n${prev}` : nextValue);
+      setTimeout(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        const cursor = el.value.length;
+        el.setSelectionRange(cursor, cursor);
+      }, 100);
+    }
   };
 
   const handleScenarioSelect = (scenario: GuidedPromptScenario) => {
@@ -134,14 +151,19 @@ export default function GuidedPromptStarter({
       </div>
 
       <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-        {GUIDED_PROMPT_SCENARIOS.map((scenario) => {
+        {GUIDED_PROMPT_SCENARIOS.map((scenario, index) => {
           const isActive = selectedScenarioId === scenario.id;
+          const isLast = index === GUIDED_PROMPT_SCENARIOS.length - 1;
+          const totalItems = GUIDED_PROMPT_SCENARIOS.length;
+          const isAloneInLastRow = isLast && totalItems % 3 === 1;
           return (
             <button
               key={scenario.id}
               type="button"
               onClick={() => handleScenarioSelect(scenario)}
               className={`rounded-full border px-3.5 py-2.5 text-left transition-colors ${
+                isAloneInLastRow ? 'sm:col-start-2' : ''
+              } ${
                 isActive
                   ? 'border-cyan-500/50 bg-cyan-500/12 text-foreground dark:border-cyan-400/70 dark:bg-cyan-400/14 dark:text-white'
                   : 'border-border/70 bg-card/60 text-foreground/80 hover:bg-accent hover:text-foreground dark:border-white/8 dark:bg-white/[0.04] dark:text-white/78 dark:hover:bg-white/[0.08] dark:hover:text-white'

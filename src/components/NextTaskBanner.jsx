@@ -113,7 +113,7 @@ const NextTaskBanner = ({ onShowAllTasks, onStartTask, className = '' }) => {
           
           <div className="flex items-center gap-1 flex-shrink-0">
             <button
-              onClick={() => onStartTask?.(nextActionPrompt)}
+              onClick={() => onStartTask?.(nextActionPrompt, nextTask)}
               className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors shadow-sm flex items-center gap-1"
             >
               <Play className="w-3 h-3" />

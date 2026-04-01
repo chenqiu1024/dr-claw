@@ -1,5 +1,5 @@
 // Service Worker for Dr. Claw PWA
-const CACHE_NAME = 'dr-claw-ui-v2';
+const CACHE_NAME = 'dr-claw-ui-v3';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -17,19 +17,28 @@ self.addEventListener('install', event => {
   self.skipWaiting();
 });
 
-// Fetch event
+// Fetch event — network-first for HTML so builds are picked up immediately
 self.addEventListener('fetch', event => {
+  const url = new URL(event.request.url);
+  const isNavigation = event.request.mode === 'navigate';
+  const isHTML = url.pathname === '/' || url.pathname.endsWith('.html');
+
+  if (isNavigation || isHTML) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request)
-      .then(response => {
-        // Return cached response if found
-        if (response) {
-          return response;
-        }
-        // Otherwise fetch from network
-        return fetch(event.request);
-      }
-    )
+      .then(response => response || fetch(event.request))
   );
 });
 

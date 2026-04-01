@@ -115,7 +115,8 @@
       "reports": "서베이 리포트",
       "graphs": "문헌 그래프",
       "notes": "서베이 노트",
-      "tasks": "단계 작업"
+      "tasks": "단계 작업",
+      "references": "참고문헌 라이브러리"
     },
     "errors": {
       "loadFailed": "이 프로젝트의 서베이 데이터를 불러오지 못했습니다."
@@ -378,7 +379,7 @@
     "updateFailed": "업데이트 실패",
     "buttons": {
       "close": "닫기",
-      "later": "나중에",
+      "later": "나중에 다시 알림",
       "copyCommand": "명령어 복사",
       "updateNow": "지금 업데이트",
       "updating": "업데이트 중..."

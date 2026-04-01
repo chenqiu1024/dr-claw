@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-03-20T05:23:15.888Z",
+  "generatedAt": "2026-03-24T17:51:17.721Z",
   "schema": "skills-taxonomy-v2",
-  "totalSkills": 111,
+  "totalSkills": 112,
   "skills": [
     {
       "name": "academic-researcher",
@@ -1358,14 +1358,14 @@
         "deep",
         "research",
         "perform",
-        "complex",
-        "long",
-        "running",
-        "tasks"
+        "multi",
+        "source",
+        "google",
+        "agent"
       ],
       "source": "imported",
       "status": "verified",
-      "summary": "Perform complex, long-running research tasks using Gemini Deep Research Agent. Use when: asked to research topics requiring multi-source synthesis, competitive analysis, market research, literature review, or comprehensive technical invest...",
+      "summary": "Perform deep, multi-source research using Google Gemini's Deep Research Agent. Use this skill whenever the user asks for comprehensive research, literature reviews, competitive analysis, market research, technology surveys, or any investig...",
       "legacy": {
         "dirPath": "gemini-deep-research",
         "skillFile": "skills/gemini-deep-research/SKILL.md",
@@ -1896,13 +1896,13 @@
         "generate",
         "edit",
         "images",
-        "nano",
-        "banana",
-        "pro"
+        "gemini",
+        "image",
+        "models"
       ],
       "source": "dr-claw",
       "status": "verified",
-      "summary": "Generate/edit images with Nano Banana Pro (Gemini 3 Pro Image). Use for image create/modify requests incl. edits. Supports text-to-image + image-to-image; 1K/2K/4K; use --input-image.",
+      "summary": "Generate/edit images with Gemini image models (default: gemini-3.1-flash-image-preview). Use for image create/modify requests incl. edits. Supports text-to-image + image-to-image; 1K/2K/4K; use --input-image. Use --model to select a differ...",
       "legacy": {
         "dirPath": "inno-figure-gen",
         "skillFile": "skills/inno-figure-gen/SKILL.md",
@@ -2131,10 +2131,10 @@
         "domain": "General"
       },
       "relatedSkills": [
+        "inno-rebuttal",
         "inno-reference-audit",
         "inno-experiment-analysis",
-        "constitutional-ai",
-        "evaluating-code-models"
+        "constitutional-ai"
       ]
     },
     {
@@ -2317,6 +2317,61 @@
       ]
     },
     {
+      "name": "inno-rebuttal",
+      "primaryIntent": "evaluation",
+      "intents": [
+        "evaluation",
+        "writing"
+      ],
+      "capabilities": [
+        "evaluation-benchmarking"
+      ],
+      "domains": [
+        "cs-ai",
+        "vision"
+      ],
+      "keywords": [
+        "inno-rebuttal",
+        "rebuttal",
+        "reviewer",
+        "review response",
+        "author response",
+        "area chair",
+        "meta-review",
+        "camera-ready",
+        "NeurIPS",
+        "ICML",
+        "ICLR",
+        "CVPR",
+        "ECCV",
+        "AAAI",
+        "ARR",
+        "KDD",
+        "UAI",
+        "AISTATS",
+        "TMLR",
+        "写rebuttal",
+        "回复审稿人",
+        "审稿意见"
+      ],
+      "source": "dr-claw",
+      "status": "verified",
+      "summary": "Drafting and refining academic rebuttals for top-tier AI/CS conferences (NeurIPS, ICML, ICLR, CVPR, ECCV, AAAI, ARR, KDD, UAI, AISTATS, TMLR, etc.). Use whenever the user needs to respond to reviewer comments, write a rebuttal, handle rev...",
+      "legacy": {
+        "dirPath": "inno-rebuttal",
+        "skillFile": "skills/inno-rebuttal/SKILL.md",
+        "topLevelGroup": "Standalone",
+        "collection": "Paper Review",
+        "domain": "Vision"
+      },
+      "relatedSkills": [
+        "inno-paper-reviewer",
+        "inno-reference-audit",
+        "constitutional-ai",
+        "evaluating-code-models"
+      ]
+    },
+    {
       "name": "inno-reference-audit",
       "primaryIntent": "evaluation",
       "intents": [
@@ -2357,8 +2412,8 @@
       "relatedSkills": [
         "inno-paper-reviewer",
         "inno-experiment-analysis",
-        "constitutional-ai",
-        "evaluating-code-models"
+        "inno-rebuttal",
+        "constitutional-ai"
       ]
     },
     {

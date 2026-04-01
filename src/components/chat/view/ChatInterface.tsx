@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QuickSettingsPanel from '../../QuickSettingsPanel';
 import ChatTaskProgressPill from './subcomponents/ChatTaskProgressPill';
 import { useTasksSettings } from '../../../contexts/TasksSettingsContext';
@@ -7,6 +7,8 @@ import { useTranslation } from 'react-i18next';
 import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import ChatComposer from './subcomponents/ChatComposer';
 import SkillShortcutsPanel from './subcomponents/SkillShortcutsPanel';
+import ChatContextSidebar from './subcomponents/ChatContextSidebar';
+import { RESUMING_STATUS_TEXT } from '../types/types';
 import type { ChatInterfaceProps } from '../types/types';
 import type { ProviderAvailability } from '../types/types';
 import { useChatProviderState } from '../hooks/useChatProviderState';
@@ -18,17 +20,20 @@ import { authenticatedFetch } from '../../../utils/api';
 import { readCliAvailability, writeCliAvailability } from '../../../utils/cliAvailability';
 import { Button } from '../../ui/button';
 import type { PendingAutoIntake } from '../../../types/app';
-import { CLAUDE_MODELS, CURSOR_MODELS, CODEX_MODELS, GEMINI_MODELS } from '../../../../shared/modelConstants';
+import { CLAUDE_MODELS, CURSOR_MODELS, CODEX_MODELS, GEMINI_MODELS, OPENROUTER_MODELS } from '../../../../shared/modelConstants';
+import { getProviderDisplayName } from '../utils/chatFormatting';
+
 
 const DEFAULT_PROVIDER_AVAILABILITY: Record<Provider, ProviderAvailability> = {
   claude: { cliAvailable: true, cliCommand: 'claude', installHint: null },
   cursor: { cliAvailable: true, cliCommand: 'agent', installHint: null },
   codex: { cliAvailable: true, cliCommand: 'codex', installHint: null },
   gemini: { cliAvailable: true, cliCommand: 'gemini', installHint: null },
+  openrouter: { cliAvailable: true, cliCommand: 'openrouter', installHint: null },
+  local: { cliAvailable: true, cliCommand: null, installHint: null },
 };
 
 const INTAKE_GREETING = `Hello! I'm your Dr. Claw research assistant, here to help you set up your research pipeline.\n\nTo get started, could you tell me about your research field or topic?`;
-const WORKSPACE_QA_GREETING = `Ask about any file, module, or implementation detail in this workspace. I will stay focused on code and project structure unless you explicitly ask to start research planning.`;
 
 const getAutoIntakePrompt = (pendingAutoIntake?: PendingAutoIntake | null) => {
   const prompt = pendingAutoIntake?.prompt?.trim();
@@ -49,12 +54,14 @@ const ANALYSIS_PROVIDERS: Array<{ id: Provider; label: string }> = [
   { id: 'claude', label: 'Claude Code' },
   { id: 'gemini', label: 'Gemini CLI' },
   { id: 'codex', label: 'Codex' },
+  { id: 'openrouter', label: 'OpenRouter' },
 ];
 
 const getProviderModelConfig = (provider: Provider) => {
   if (provider === 'claude') return CLAUDE_MODELS;
   if (provider === 'codex') return CODEX_MODELS;
   if (provider === 'gemini') return GEMINI_MODELS;
+  if (provider === 'openrouter') return OPENROUTER_MODELS;
   return CURSOR_MODELS;
 };
 
@@ -90,12 +97,14 @@ function ChatInterface({
   clearPendingAutoIntake,
   importedProjectAnalysisPrompt,
   clearImportedProjectAnalysisPrompt,
+  onOpenShellForSession,
   newSessionMode = 'research',
   onNewSessionModeChange,
 }: ChatInterfaceProps) {
   const { tasksEnabled, isTaskMasterInstalled } = useTasksSettings();
   const { refreshTasks } = useTaskMaster();
   const { t } = useTranslation('chat');
+  const [isShellEditPromptOpen, setIsShellEditPromptOpen] = useState(false);
 
   const streamBufferRef = useRef('');
   const streamTimerRef = useRef<number | null>(null);
@@ -120,6 +129,10 @@ function ChatInterface({
     setCodexModel,
     geminiModel,
     setGeminiModel,
+    openrouterModel,
+    setOpenrouterModel,
+    localModel,
+    setLocalModel,
     permissionMode,
     pendingPermissionRequests,
     setPendingPermissionRequests,
@@ -159,11 +172,14 @@ function ChatInterface({
     showLoadAllOverlay,
     claudeStatus,
     setClaudeStatus,
+    statusTextOverride,
+    setStatusTextOverride,
     createDiff,
     scrollContainerRef,
     scrollToBottom,
     scrollToBottomAndReset,
     handleScroll,
+    resolveSessionStatusCheck,
   } = useChatSessionState({
     selectedProject,
     selectedSession,
@@ -179,11 +195,17 @@ function ChatInterface({
   const {
     input,
     setInput,
+    attachedPrompt,
+    setAttachedPrompt,
     textareaRef,
     inputHighlightRef,
     isTextareaExpanded,
     thinkingMode,
     setThinkingMode,
+    codexReasoningEffort,
+    setCodexReasoningEffort,
+    geminiThinkingMode,
+    setGeminiThinkingMode,
     slashCommandsCount,
     filteredCommands,
     frequentCommands,
@@ -198,14 +220,14 @@ function ChatInterface({
     selectedFileIndex,
     renderInputWithMentions,
     selectFile,
-    attachedImages,
-    setAttachedImages,
-    uploadingImages,
-    imageErrors,
+    attachedFiles,
+    removeAttachedFile,
+    uploadingFiles,
+    fileErrors,
     getRootProps,
     getInputProps,
     isDragActive,
-    openImagePicker,
+    openFilePicker,
     handleSubmit,
     handleInputChange,
     handleKeyDown,
@@ -222,6 +244,7 @@ function ChatInterface({
     isInputFocused,
     intakeGreeting,
     setIntakeGreeting,
+    setPendingStageTagKeys,
     submitProgrammaticInput,
   } = useChatComposerState({
     selectedProject,
@@ -234,6 +257,8 @@ function ChatInterface({
     claudeModel,
     codexModel,
     geminiModel,
+    openrouterModel,
+    localModel,
     isLoading,
     canAbortSession,
     tokenBudget,
@@ -266,6 +291,7 @@ function ChatInterface({
     setIsLoading,
     setCanAbortSession,
     setClaudeStatus,
+    setStatusTextOverride,
     setTokenBudget,
     setIsSystemSessionChange,
     setPendingPermissionRequests,
@@ -275,9 +301,23 @@ function ChatInterface({
     onSessionInactive,
     onSessionProcessing,
     onSessionNotProcessing,
+    onSessionStatusResolved: resolveSessionStatusCheck,
     onReplaceTemporarySession,
     onNavigateToSession,
   });
+
+  const chatMessagesRef = useRef(chatMessages);
+  chatMessagesRef.current = chatMessages;
+
+  const handleRetry = useCallback(() => {
+    const msgs = chatMessagesRef.current;
+    let lastUserMessage: (typeof msgs)[number] | undefined;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].type === 'user') { lastUserMessage = msgs[i]; break; }
+    }
+    if (!lastUserMessage?.content) return;
+    submitProgrammaticInput(lastUserMessage.content);
+  }, [submitProgrammaticInput]);
 
   const autoIntakeTriggeredRef = useRef(false);
   const lastAutoIntakeTriggerIdRef = useRef<string | null>(null);
@@ -311,6 +351,8 @@ function ChatInterface({
       cursor: cached.cursor ?? DEFAULT_PROVIDER_AVAILABILITY.cursor,
       codex: cached.codex ?? DEFAULT_PROVIDER_AVAILABILITY.codex,
       gemini: cached.gemini ?? DEFAULT_PROVIDER_AVAILABILITY.gemini,
+      openrouter: cached.openrouter ?? DEFAULT_PROVIDER_AVAILABILITY.openrouter,
+      local: cached.local ?? DEFAULT_PROVIDER_AVAILABILITY.local,
     };
   });
 
@@ -318,8 +360,19 @@ function ChatInterface({
     if (importedProjectAnalysisProvider === 'claude') return claudeModel;
     if (importedProjectAnalysisProvider === 'codex') return codexModel;
     if (importedProjectAnalysisProvider === 'gemini') return geminiModel;
+    if (importedProjectAnalysisProvider === 'openrouter') return openrouterModel;
+    if (importedProjectAnalysisProvider === 'local') return localModel;
     return cursorModel;
-  }, [claudeModel, codexModel, cursorModel, geminiModel, importedProjectAnalysisProvider]);
+  }, [claudeModel, codexModel, cursorModel, geminiModel, openrouterModel, localModel, importedProjectAnalysisProvider]);
+
+  const handleStartTaskInChat = useCallback((prompt?: string, task?: { stage?: string } | null) => {
+    const nextPrompt = prompt && prompt.trim()
+      ? prompt
+      : t('tasks.nextTaskPrompt', { defaultValue: 'Start the next task' });
+    setInput(nextPrompt);
+    const stage = String(task?.stage || '').trim().toLowerCase();
+    setPendingStageTagKeys(stage ? [stage] : []);
+  }, [setInput, setPendingStageTagKeys, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -330,6 +383,7 @@ function ChatInterface({
         { provider: 'cursor', endpoint: '/api/cli/cursor/status', fallbackCommand: 'agent' },
         { provider: 'codex', endpoint: '/api/cli/codex/status', fallbackCommand: 'codex' },
         { provider: 'gemini', endpoint: '/api/cli/gemini/status', fallbackCommand: 'gemini' },
+        { provider: 'openrouter', endpoint: '/api/cli/openrouter/status', fallbackCommand: 'openrouter' },
       ];
 
       const results = await Promise.all(checks.map(async ({ provider: nextProvider, endpoint, fallbackCommand }) => {
@@ -375,7 +429,7 @@ function ChatInterface({
 
   useEffect(() => {
     if (providerAvailability[provider]?.cliAvailable === false) {
-      const fallbackProvider = (['claude', 'cursor', 'codex', 'gemini'] as const).find(
+      const fallbackProvider = (['claude', 'cursor', 'codex', 'gemini', 'openrouter'] as const).find(
         (candidate) => providerAvailability[candidate]?.cliAvailable !== false,
       );
 
@@ -459,6 +513,10 @@ function ChatInterface({
   }, [onNewSessionModeChange, selectedSession?.id, selectedSession?.mode]);
 
   useEffect(() => {
+    setIsShellEditPromptOpen(false);
+  }, [selectedProject?.name, selectedSession?.id]);
+
+  useEffect(() => {
     if (!isLoading || !canAbortSession) {
       return;
     }
@@ -481,12 +539,13 @@ function ChatInterface({
   const prevIsLoadingForProcessingRef = useRef(false);
   useEffect(() => {
     const processingSessionId = selectedSession?.id || currentSessionId;
-    const loadingJustStarted = isLoading && !prevIsLoadingForProcessingRef.current;
-    prevIsLoadingForProcessingRef.current = isLoading;
+    const shouldTrackAsProcessing = isLoading && claudeStatus?.text !== RESUMING_STATUS_TEXT;
+    const loadingJustStarted = shouldTrackAsProcessing && !prevIsLoadingForProcessingRef.current;
+    prevIsLoadingForProcessingRef.current = shouldTrackAsProcessing;
     if (processingSessionId && loadingJustStarted && onSessionProcessing) {
       onSessionProcessing(processingSessionId);
     }
-  }, [currentSessionId, isLoading, onSessionProcessing, selectedSession?.id]);
+  }, [claudeStatus?.text, currentSessionId, isLoading, onSessionProcessing, selectedSession?.id]);
 
   useEffect(() => {
     return () => {
@@ -563,13 +622,24 @@ function ChatInterface({
     submitProgrammaticInput,
   ]);
 
+  const handleOpenShellEditPrompt = useCallback(() => {
+    if (!selectedSession || !onOpenShellForSession) {
+      return;
+    }
+    setIsShellEditPromptOpen(true);
+  }, [onOpenShellForSession, selectedSession]);
+
+  const handleCloseShellEditPrompt = useCallback(() => {
+    setIsShellEditPromptOpen(false);
+  }, []);
+
+  const handleConfirmOpenShell = useCallback(() => {
+    setIsShellEditPromptOpen(false);
+    onOpenShellForSession?.();
+  }, [onOpenShellForSession]);
+
   if (!selectedProject) {
-    const selectedProviderLabel =
-      provider === 'cursor'
-        ? t('messageTypes.cursor')
-        : provider === 'codex'
-          ? t('messageTypes.codex')
-          : t('messageTypes.claude');
+    const selectedProviderLabel = getProviderDisplayName(provider);
 
     return (
       <>
@@ -585,9 +655,7 @@ function ChatInterface({
         </div>
         <div className="flex justify-end px-4 pb-4">
           <ChatTaskProgressPill
-            onStartTask={(prompt?: string) =>
-              setInput(prompt && prompt.trim() ? prompt : t('tasks.nextTaskPrompt', { defaultValue: 'Start the next task' }))
-            }
+            onStartTask={handleStartTaskInChat}
             onShowAllTasks={onShowAllTasks}
           />
         </div>
@@ -597,7 +665,8 @@ function ChatInterface({
 
   return (
     <>
-      <div className="h-full flex flex-col">
+      <div className="h-full flex min-h-0 flex-col xl:flex-row">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {shouldShowImportedProjectAnalysisPrompt && (
           <div className="mx-auto mt-4 w-full max-w-3xl px-3 sm:px-4">
             <div className="rounded-xl border border-border bg-card/95 shadow-sm px-4 py-4 sm:px-5">
@@ -677,6 +746,7 @@ function ChatInterface({
           setProvider={(nextProvider) => setProvider(nextProvider as Provider)}
           textareaRef={textareaRef}
           setInput={setInput}
+          setAttachedPrompt={setAttachedPrompt}
           claudeModel={claudeModel}
           setClaudeModel={setClaudeModel}
           cursorModel={cursorModel}
@@ -685,6 +755,10 @@ function ChatInterface({
           setCodexModel={setCodexModel}
           geminiModel={geminiModel}
           setGeminiModel={setGeminiModel}
+          openrouterModel={openrouterModel}
+          setOpenrouterModel={setOpenrouterModel}
+          localModel={localModel}
+          setLocalModel={setLocalModel}
           isLoadingMoreMessages={isLoadingMoreMessages}
           hasMoreMessages={hasMoreMessages}
           totalMessages={totalMessages}
@@ -701,26 +775,27 @@ function ChatInterface({
           onFileOpen={onFileOpen}
           onShowSettings={onShowSettings}
           onGrantToolPermission={handleGrantToolPermission}
+          onSuggestShellEdit={handleOpenShellEditPrompt}
           autoExpandTools={autoExpandTools}
           showRawParameters={showRawParameters}
           showThinking={showThinking}
           selectedProject={selectedProject}
           isLoading={isLoading}
+          statusText={statusTextOverride || claudeStatus?.text}
           providerAvailability={providerAvailability}
           newSessionMode={newSessionMode}
           onNewSessionModeChange={onNewSessionModeChange}
+          onRetry={handleRetry}
         />
 
         <div className="px-2 sm:px-4 max-w-5xl mx-auto w-full">
           <div className="flex gap-4">
             <div className="flex-1 min-w-0">
-              <SkillShortcutsPanel setInput={setInput} textareaRef={textareaRef} />
+              <SkillShortcutsPanel setInput={setInput} textareaRef={textareaRef} setAttachedPrompt={setAttachedPrompt} />
             </div>
             <div className="flex-1 min-w-0">
               <ChatTaskProgressPill
-                onStartTask={(prompt?: string) =>
-                  setInput(prompt && prompt.trim() ? prompt : t('tasks.nextTaskPrompt', { defaultValue: 'Start the next task' }))
-                }
+                onStartTask={handleStartTaskInChat}
                 onShowAllTasks={onShowAllTasks}
               />
             </div>
@@ -731,32 +806,34 @@ function ChatInterface({
           pendingPermissionRequests={pendingPermissionRequests}
           handlePermissionDecision={handlePermissionDecision}
           handleGrantToolPermission={handleGrantToolPermission}
-          claudeStatus={claudeStatus}
+          claudeStatus={claudeStatus ? { ...claudeStatus, text: statusTextOverride || claudeStatus.text } : claudeStatus}
           isLoading={isLoading}
           onAbortSession={handleAbortSession}
           provider={provider}
           permissionMode={permissionMode}
           onModeSwitch={cyclePermissionMode}
+          codexModel={codexModel}
+          geminiModel={geminiModel}
           thinkingMode={thinkingMode}
           setThinkingMode={setThinkingMode}
+          codexReasoningEffort={codexReasoningEffort}
+          setCodexReasoningEffort={setCodexReasoningEffort}
+          geminiThinkingMode={geminiThinkingMode}
+          setGeminiThinkingMode={setGeminiThinkingMode}
           tokenBudget={tokenBudget}
           slashCommandsCount={slashCommandsCount}
           onToggleCommandMenu={handleToggleCommandMenu}
-          hasInput={Boolean(input.trim())}
+          hasInput={Boolean(input.trim()) || attachedFiles.length > 0}
           onClearInput={handleClearInput}
           isUserScrolledUp={isUserScrolledUp}
           hasMessages={chatMessages.length > 0}
           onScrollToBottom={scrollToBottomAndReset}
           onSubmit={handleSubmit}
           isDragActive={isDragActive}
-          attachedImages={attachedImages}
-          onRemoveImage={(index) =>
-            setAttachedImages((previous) =>
-              previous.filter((_, currentIndex) => currentIndex !== index),
-            )
-          }
-          uploadingImages={uploadingImages}
-          imageErrors={imageErrors}
+          attachedFiles={attachedFiles}
+          onRemoveFile={removeAttachedFile}
+          uploadingFiles={uploadingFiles}
+          fileErrors={fileErrors}
           showFileDropdown={showFileDropdown}
           filteredFiles={filteredFiles}
           selectedFileIndex={selectedFileIndex}
@@ -769,7 +846,7 @@ function ChatInterface({
           frequentCommands={commandQuery ? [] : frequentCommands}
           getRootProps={getRootProps as (...args: unknown[]) => Record<string, unknown>}
           getInputProps={getInputProps as (...args: unknown[]) => Record<string, unknown>}
-          openImagePicker={openImagePicker}
+          openFilePicker={openFilePicker}
           inputHighlightRef={inputHighlightRef}
           renderInputWithMentions={renderInputWithMentions}
           textareaRef={textareaRef}
@@ -783,20 +860,61 @@ function ChatInterface({
           onInputFocusChange={handleInputFocusChange}
           isInputFocused={isInputFocused}
           placeholder={t('input.placeholder', {
-            provider:
-              provider === 'cursor'
-                ? t('messageTypes.cursor')
-                : provider === 'codex'
-                ? t('messageTypes.codex')
-                : provider === 'gemini'
-                ? t('messageTypes.gemini')
-                : t('messageTypes.claude'),
+            provider: getProviderDisplayName(provider),
           })}
           isTextareaExpanded={isTextareaExpanded}
           sendByCtrlEnter={sendByCtrlEnter}
           onTranscript={handleTranscript}
+          projectName={selectedProject?.name}
+          onReferenceContext={(context) => {
+            setInput((prev) => prev ? `${prev}\n\n${context}` : context);
+          }}
+          attachedPrompt={attachedPrompt}
+          onRemoveAttachedPrompt={() => setAttachedPrompt(null)}
+          onUpdateAttachedPrompt={(text) =>
+            setAttachedPrompt((prev) => prev ? { ...prev, promptText: text } : null)
+          }
+        />
+
+        </div>
+
+        <ChatContextSidebar
+          selectedProject={selectedProject}
+          selectedSession={selectedSession}
+          currentSessionId={currentSessionId}
+          provider={provider}
+          newSessionMode={newSessionMode}
+          chatMessages={chatMessages}
+          onFileOpen={onFileOpen}
         />
       </div>
+
+      {isShellEditPromptOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={handleCloseShellEditPrompt}
+          />
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-background shadow-2xl">
+            <div className="px-5 py-4">
+              <h3 className="text-base font-semibold text-foreground">
+                {t('shell.historyEdit.promptTitle')}
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {t('shell.historyEdit.promptDescription')}
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+              <Button variant="outline" onClick={handleCloseShellEditPrompt}>
+                {t('shell.historyEdit.cancel')}
+              </Button>
+              <Button onClick={handleConfirmOpenShell}>
+                {t('shell.historyEdit.confirm')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <QuickSettingsPanel />
     </>

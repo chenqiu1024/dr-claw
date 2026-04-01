@@ -1,9 +1,28 @@
+import { useTranslation } from 'react-i18next';
+
 type TokenUsagePieProps = {
-  used: number;
-  total: number;
+  used?: number | null;
+  total?: number | null;
+  unsupportedContext?: boolean;
+  message?: string;
 };
 
-export default function TokenUsagePie({ used, total }: TokenUsagePieProps) {
+export default function TokenUsagePie({ used, total, unsupportedContext, message }: TokenUsagePieProps) {
+  const { t } = useTranslation('chat');
+
+  if (unsupportedContext) {
+    return (
+      <div
+        className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400"
+        title={message || t('tokenUsage.unavailableTitle')}
+      >
+        <span className="rounded-full border border-border/70 px-2 py-0.5 font-medium">
+          {t('tokenUsage.unavailable')}
+        </span>
+      </div>
+    );
+  }
+
   // Token usage visualization component
   // Only bail out on missing values or non‐positive totals; allow used===0 to render 0%
   if (used == null || total == null || total <= 0) return null;

@@ -17,7 +17,7 @@ type TaskItem = {
 };
 
 interface ChatTaskProgressPillProps {
-  onStartTask?: (prompt?: string) => void;
+  onStartTask?: (prompt?: string, task?: TaskItem | null) => void;
   onShowAllTasks?: (() => void) | null;
   className?: string;
 }
@@ -131,7 +131,7 @@ export default function ChatTaskProgressPill({
 
         {nextTask && (
           <button
-            onClick={() => onStartTask?.(actionPrompt)}
+            onClick={() => onStartTask?.(actionPrompt, nextTask)}
             className="inline-flex h-8 items-center gap-1 rounded-md bg-cyan-600 px-2.5 text-xs font-medium text-white transition-colors hover:bg-cyan-500"
           >
             <Play className="h-3 w-3" />

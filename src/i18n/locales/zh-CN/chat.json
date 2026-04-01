@@ -1,4 +1,8 @@
 {
+  "status": {
+    "thinking": "思考中...",
+    "runningCode": "运行代码中"
+  },
   "codeBlock": {
     "copy": "复制",
     "copied": "已复制",
@@ -12,6 +16,10 @@
     "cursor": "Cursor",
     "codex": "Codex",
     "gemini": "Gemini"
+  },
+  "error": {
+    "retry": "重试",
+    "usageLimitHint": "使用限制重置后可以重试"
   },
   "tools": {
     "settings": "工具设置",
@@ -87,6 +95,10 @@
   "usageLimit": {
     "resetAt": "Claude 使用限制已达到。您的限制将在 **{{time}} {{timezone}}** - {{date}} 重置"
   },
+  "tokenUsage": {
+    "unavailable": "上下文 N/A",
+    "unavailableTitle": "当前无法获取此会话的上下文占用情况。"
+  },
   "codex": {
     "permissionMode": "权限模式",
     "modes": {
@@ -108,8 +120,10 @@
     "placeholderDefault": "输入您的消息...",
     "disabled": "输入已禁用",
     "attachFiles": "附加文件",
+    "attachReferences": "附加文献",
     "attachImages": "附加图片",
     "dropFilesHere": "拖放文件到此处",
+    "attachmentOnlyFallback": "请先查看我附上的文件，并基于这些文件帮助我。",
     "send": "发送",
     "stop": "停止",
     "hintText": {
@@ -157,6 +171,98 @@
     },
     "buttonTitle": "思考模式：{{mode}}"
   },
+  "codexReasoningEffort": {
+    "selector": {
+      "title": "思考强度",
+      "description": "控制 Codex 在响应前投入多少审慎推理",
+      "active": "激活",
+      "tip": "更高的思考强度通常能提升复杂任务质量，但会增加响应时延"
+    },
+    "levels": {
+      "default": {
+        "name": "默认",
+        "description": "使用模型默认的思考强度"
+      },
+      "minimal": {
+        "name": "极低",
+        "description": "最快响应，仅进行最少量的审慎推理"
+      },
+      "low": {
+        "name": "低",
+        "description": "较轻量推理，延迟更低"
+      },
+      "medium": {
+        "name": "中",
+        "description": "在深度与延迟之间取得平衡"
+      },
+      "high": {
+        "name": "高",
+        "description": "为更难任务投入更多推理"
+      },
+      "xhigh": {
+        "name": "最高",
+        "description": "最大推理强度"
+      }
+    },
+    "buttonTitle": "思考强度：{{level}}"
+  },
+  "geminiThinking": {
+    "selector": {
+      "title": "思考强度",
+      "descriptionGemini3": "Gemini 3 模型使用官方 thinking level",
+      "descriptionGemini25": "Gemini 2.5 模型使用固定的 thinking budget 预设",
+      "active": "激活",
+      "tipGemini3": "Gemini 3 使用官方 thinking level。更高等级通常会提升推理深度，但也会增加延迟。",
+      "tipGemini25": "Gemini 2.5 使用 token budget。更高预算会允许模型在最终回答前使用更多推理 token。"
+    },
+    "modes": {
+      "default": {
+        "name": "默认",
+        "description": "使用该模型在 Gemini CLI 中的默认行为"
+      },
+      "minimal": {
+        "name": "极低",
+        "description": "最低官方 thinking level"
+      },
+      "low": {
+        "name": "低",
+        "description": "更低延迟的轻量推理"
+      },
+      "medium": {
+        "name": "中",
+        "description": "在推理深度与延迟之间取得平衡"
+      },
+      "high": {
+        "name": "高",
+        "description": "最高官方 thinking level"
+      },
+      "dynamic": {
+        "name": "动态",
+        "description": "让模型动态调整 thinking budget"
+      },
+      "off": {
+        "name": "关闭",
+        "description": "关闭思考"
+      },
+      "light": {
+        "name": "轻量",
+        "description": "使用较小的固定 thinking budget（{{budget}} tokens）"
+      },
+      "balanced": {
+        "name": "平衡",
+        "description": "使用中等 thinking budget（{{budget}} tokens）"
+      },
+      "deep": {
+        "name": "深入",
+        "description": "使用较大的 thinking budget（{{budget}} tokens）"
+      },
+      "max": {
+        "name": "最高",
+        "description": "使用该模型支持的最大 thinking budget（{{budget}} tokens）"
+      }
+    },
+    "buttonTitle": "思考强度：{{mode}}"
+  },
   "providerSelection": {
     "title": "选择您的 AI 助手",
     "description": "选择一个供应商以开始新对话",
@@ -168,26 +274,33 @@
       "anthropic": "Anthropic",
       "openai": "OpenAI",
       "google": "Google",
-      "cursorEditor": "AI 代码编辑器"
+      "cursorEditor": "AI 代码编辑器",
+      "openrouter": "通过 API 使用任意模型",
+      "local": "在本地 GPU 上运行"
     },
     "readyPrompt": {
       "claude": "已准备好使用 Claude {{model}}。在下方输入您的消息。",
       "cursor": "已准备好使用 Cursor {{model}}。在下方输入您的消息。",
       "gemini": "已准备好使用 Gemini {{model}}。在下方输入您的消息。",
       "codex": "已准备好使用 Codex {{model}}。在下方输入您的消息。",
+      "openrouter": "已准备好使用 OpenRouter {{model}}。在下方输入您的消息。",
+      "local": "已准备好使用本地 GPU {{model}}。在下方输入您的消息。",
       "default": "请在上方选择一个供应商以开始"
     }
   },
   "session": {
     "mode": {
       "title": "选择会话类型",
+      "badge_one": "{{count}} 种模式",
+      "badge_other": "{{count}} 种模式",
       "subtitle": "决定这个会话是用于研究流程，还是仅用于项目文件问答。",
       "research": "研究",
       "workspaceQa": "文件问答",
-      "researchTitle": "Research Session",
+      "researchTitle": "研究会话",
       "researchDescription": "使用研究工作流、onboarding 提示和 pipeline 引导。",
-      "workspaceQaTitle": "Workspace Q&A",
+      "workspaceQaTitle": "工作区问答",
       "workspaceQaDescription": "只询问文件、模块和实现细节，不触发研究流程。",
+      "workspaceQaGreeting": "你可以询问这个工作区中的任意文件、模块或实现细节。除非你明确要求开始研究规划，否则我会始终聚焦于代码和项目结构。",
       "workspaceQaHint": "这个会话会聚焦仓库问题，除非你明确要求开始研究规划。"
     },
     "continue": {
@@ -207,6 +320,54 @@
       "loadingAll": "正在加载全部消息...",
       "allLoaded": "全部消息已加载",
       "perfWarning": "已加载全部消息 - 滚动可能变慢。点击「滚动到底部」恢复性能。"
+    }
+  },
+  "sessionContext": {
+    "title": "会话上下文",
+    "description": "这里展示本次会话轨迹中实际出现过的文件、任务和输出。",
+    "codexNotice": "Codex 的可见性目前并不完整，取决于运行时当前暴露的工具事件。",
+    "traceError": "完整会话轨迹加载失败，当前仅显示内存中的实时消息。",
+    "stats": {
+      "mode": "模式",
+      "provider": "提供方",
+      "contextFiles": "上下文文件",
+      "unreadOutputs": "未读输出"
+    },
+    "sections": {
+      "injectedContext": "注入上下文",
+      "taskContext": "任务上下文",
+      "reviewQueue": "审阅队列",
+      "fileReview": "文件审阅"
+    },
+    "actions": {
+      "collapse": "折叠上下文侧栏",
+      "expand": "展开上下文侧栏",
+      "resize": "拖动以调整宽度"
+    },
+    "filters": {
+      "all": "全部",
+      "unread": "未读",
+      "reviewed": "已读"
+    },
+    "kinds": {
+      "task": "任务",
+      "todo": "待办",
+      "skill": "技能",
+      "directory": "目录"
+    },
+    "empty": {
+      "injectedContext": "当前还没有观察到文件或目录上下文。",
+      "taskContext": "当前还没有捕获到任务或待办上下文。",
+      "reviewQueue": "当前会话还没有发现生成文件。"
+    },
+    "preview": {
+      "titleFallback": "预览",
+      "selectFile": "选择一个文件进行预览",
+      "open": "打开",
+      "loading": "正在加载预览...",
+      "loadError": "加载预览失败。{{error}}",
+      "selectToReview": "选择一个文件进行审阅",
+      "unreadHint": "输出文件会保持未读状态，直到你从审阅队列中打开它。"
     }
   },
   "shell": {
@@ -234,7 +395,17 @@
     "runCommand": "在 {{projectName}} 中运行 {{command}}",
     "openTerminal": "在 {{projectName}} 中打开终端",
     "startCli": "在 {{projectName}} 中启动 Claude CLI",
+    "historyEdit": {
+      "action": "修改历史输入",
+      "promptTitle": "请在 Shell 中完成历史编辑",
+      "promptDescription": "Web Chat 不直接改写历史消息。如需使用模型原生的编辑、撤回或重试能力，请前往 Shell 操作。",
+      "cancel": "取消",
+      "confirm": "前往 Shell",
+      "bannerTitle": "当前会话已切换到 Shell",
+      "bannerDescription": "请在这里使用模型原生的历史编辑、撤回或重试能力。Web Chat 仅展示对话，不直接改写历史。"
+    },
     "workspace": {
+      "currentSession": "当前会话",
       "newShell": "新建 Shell",
       "tabTitle": "Shell {{index}}",
       "closeShell": "关闭 {{title}}"
@@ -324,6 +495,10 @@
         "title": "审阅稿件",
         "description": "以审稿视角检查方法、证据、引用与写作质量。"
       },
+      "rebuttalResponse": {
+        "title": "撰写 Rebuttal",
+        "description": "针对审稿意见，使用会场感知策略、安全门控和 Issue 追踪撰写专业回复。"
+      },
       "grantProposal": {
         "title": "基金申请",
         "description": "为 NSF、NIH、DOE、DARPA、NASA 或 NSFC 的基金申请做规划、起草、修改或重投。"
@@ -333,6 +508,11 @@
         "description": "基于论文内容生成演示文稿、旁白脚本、音频与演示视频。"
       }
     }
+  },
+  "attachedPrompt": {
+    "showPrompt": "显示提示词",
+    "hidePrompt": "隐藏提示词",
+    "remove": "移除"
   },
   "pipelineOnboarding": {
     "noBrief": {

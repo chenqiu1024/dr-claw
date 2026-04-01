@@ -19,6 +19,8 @@ function buildCliInstallHint(agent) {
       return 'Codex CLI is not installed. Install it first, then retry login.';
     case 'gemini':
       return 'Gemini CLI is not installed. Install it first, then retry login.';
+    case 'openrouter':
+      return 'Set OPENROUTER_API_KEY in your .env file. Get a key at https://openrouter.ai/keys';
     default:
       return 'Required CLI is not installed. Install it first, then retry login.';
   }
@@ -56,8 +58,9 @@ router.get('/claude/status', async (req, res) => {
       }, 'claude'));
     }
 
-    // Check for Custom API env var
-    if (process.env.ANTHROPIC_AUTH_TOKEN) {
+    // Check for Custom API env var (ANTHROPIC_API_KEY is the correct var for the SDK;
+    // also check legacy ANTHROPIC_AUTH_TOKEN for backward compatibility)
+    if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) {
       return res.json(buildStatusPayload({
         authenticated: true,
         email: 'Custom API Connected',
@@ -154,6 +157,16 @@ async function checkGeminiCredentials() {
     cliCommand = resolvedCliCommand || cliCommand;
 
     if (!resolvedCliCommand) {
+      if (process.env.GOOGLE_API_KEY) {
+        return {
+          authenticated: true,
+          email: 'API Key Connected',
+          method: 'custom_api',
+          cliAvailable: false,
+          cliCommand,
+          installHint: buildCliInstallHint('gemini')
+        };
+      }
       return {
         authenticated: false,
         email: null,
@@ -268,10 +281,19 @@ async function checkGeminiCredentials() {
   }
 }
 
-function checkClaudeCredentials() {
+async function checkClaudeCredentials() {
+  const resolvedCliCommand = await resolveAvailableCliCommand({
+    envVarName: 'CLAUDE_CLI_PATH',
+    defaultCommands: ['claude'],
+    appendWindowsSuffixes: true
+  });
+
+  if (!resolvedCliCommand) {
+    return checkClaudeCredentialsFile({ cliAvailable: false });
+  }
+
   return new Promise((resolve) => {
     let processCompleted = false;
-    let commandMissing = false;
 
     const timeout = setTimeout(() => {
       if (!processCompleted) {
@@ -280,14 +302,15 @@ function checkClaudeCredentials() {
           childProcess.kill();
         }
         // Fall back to credentials file check on timeout
-        checkClaudeCredentialsFile({ cliAvailable: !commandMissing }).then(resolve);
+        checkClaudeCredentialsFile({ cliAvailable: true, cliCommand: resolvedCliCommand }).then(resolve);
       }
     }, 5000);
 
     let childProcess;
     try {
-      childProcess = spawn('claude', ['auth', 'status', '--json'], {
-        env: { ...process.env, CLAUDECODE: '' }
+      childProcess = spawn(resolvedCliCommand, ['auth', 'status', '--json'], {
+        env: { ...process.env, CLAUDECODE: '' },
+        shell: process.platform === 'win32'
       });
     } catch {
       clearTimeout(timeout);
@@ -317,7 +340,9 @@ function checkClaudeCredentials() {
           if (status.loggedIn) {
             resolve({
               authenticated: true,
-              email: status.email || null
+              email: status.email || null,
+              cliAvailable: true,
+              cliCommand: resolvedCliCommand
             });
             return;
           }
@@ -327,21 +352,21 @@ function checkClaudeCredentials() {
       }
 
       // CLI check failed, fall back to credentials file
-      checkClaudeCredentialsFile({ cliAvailable: !commandMissing }).then(resolve);
+      checkClaudeCredentialsFile({ cliAvailable: true, cliCommand: resolvedCliCommand }).then(resolve);
     });
 
-    childProcess.on('error', (error) => {
+    childProcess.on('error', () => {
       if (processCompleted) return;
       processCompleted = true;
       clearTimeout(timeout);
-      commandMissing = error?.code === 'ENOENT';
-      // claude CLI not available, fall back to credentials file
-      checkClaudeCredentialsFile({ cliAvailable: !commandMissing }).then(resolve);
+      // Command was already validated by resolveAvailableCliCommand, so treat
+      // any spawn error as a transient failure rather than "CLI missing".
+      checkClaudeCredentialsFile({ cliAvailable: true, cliCommand: resolvedCliCommand }).then(resolve);
     });
   });
 }
 
-async function checkClaudeCredentialsFile({ cliAvailable = true } = {}) {
+async function checkClaudeCredentialsFile({ cliAvailable = true, cliCommand = 'claude' } = {}) {
   try {
     const credPath = path.join(os.homedir(), '.claude', '.credentials.json');
     const content = await fs.readFile(credPath, 'utf8');
@@ -356,7 +381,7 @@ async function checkClaudeCredentialsFile({ cliAvailable = true } = {}) {
           authenticated: true,
           email: creds.email || creds.user || null,
           cliAvailable,
-          cliCommand: 'claude'
+          cliCommand
         };
       }
     }
@@ -365,7 +390,7 @@ async function checkClaudeCredentialsFile({ cliAvailable = true } = {}) {
       authenticated: false,
       email: null,
       cliAvailable,
-      cliCommand: 'claude',
+      cliCommand,
       error: cliAvailable ? null : 'Claude Code CLI not installed',
       installHint: cliAvailable ? null : buildCliInstallHint('claude')
     };
@@ -374,7 +399,7 @@ async function checkClaudeCredentialsFile({ cliAvailable = true } = {}) {
       authenticated: false,
       email: null,
       cliAvailable,
-      cliCommand: 'claude',
+      cliCommand,
       error: cliAvailable ? null : 'Claude Code CLI not installed',
       installHint: cliAvailable ? null : buildCliInstallHint('claude')
     };
@@ -498,6 +523,17 @@ async function checkCodexCredentials() {
     cliCommand = resolvedCliCommand || cliCommand;
 
     if (!resolvedCliCommand) {
+      // Even without CLI, an OPENAI_API_KEY env var means Codex SDK can work
+      if (process.env.OPENAI_API_KEY) {
+        return {
+          authenticated: true,
+          email: 'API Key Connected',
+          method: 'custom_api',
+          cliAvailable: false,
+          cliCommand,
+          installHint: buildCliInstallHint('codex')
+        };
+      }
       return {
         authenticated: false,
         email: null,
@@ -542,11 +578,12 @@ async function checkCodexCredentials() {
       };
     }
 
-    // Also check for OPENAI_API_KEY as fallback auth method
-    if (auth.OPENAI_API_KEY) {
+    // Also check for OPENAI_API_KEY as fallback auth method (in auth.json or env)
+    if (auth.OPENAI_API_KEY || process.env.OPENAI_API_KEY) {
       return {
         authenticated: true,
-        email: 'API Key Auth',
+        email: 'API Key Connected',
+        method: 'custom_api',
         cliAvailable: true,
         cliCommand
       };
@@ -560,6 +597,16 @@ async function checkCodexCredentials() {
       cliCommand
     };
   } catch (error) {
+    // File not found — check env var before giving up
+    if (process.env.OPENAI_API_KEY) {
+      return {
+        authenticated: true,
+        email: 'API Key Connected',
+        method: 'custom_api',
+        cliAvailable: true,
+        cliCommand
+      };
+    }
     if (error.code === 'ENOENT') {
       return {
         authenticated: false,
@@ -578,6 +625,145 @@ async function checkCodexCredentials() {
     };
   }
 }
+
+router.get('/openrouter/status', async (req, res) => {
+  try {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (apiKey) {
+      return res.json(buildStatusPayload({
+        authenticated: true,
+        email: 'API Key Connected',
+        cliAvailable: true,
+        cliCommand: 'openrouter'
+      }, 'openrouter'));
+    }
+
+    return res.json(buildStatusPayload({
+      authenticated: false,
+      email: null,
+      error: 'OPENROUTER_API_KEY not set',
+      cliAvailable: true,
+      cliCommand: 'openrouter',
+      installHint: 'Set OPENROUTER_API_KEY in your .env file or environment. Get a key at https://openrouter.ai/keys'
+    }, 'openrouter'));
+  } catch (error) {
+    console.error('Error checking OpenRouter auth status:', error);
+    res.status(500).json({
+      authenticated: false,
+      email: null,
+      error: error.message
+    });
+  }
+});
+
+router.post('/openrouter/verify-api-key', async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    if (!apiKey) return res.status(400).json({ error: 'API key is required' });
+
+    const response = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    });
+
+    if (response.ok) {
+      const envPath = path.join(process.cwd(), '.env');
+      let envContent = '';
+      try { envContent = await fs.readFile(envPath, 'utf8'); } catch {}
+
+      const lines = envContent.split('\n');
+      let found = false;
+      const newLines = lines.map(line => {
+        if (line.trim().startsWith('OPENROUTER_API_KEY=')) {
+          found = true;
+          return `OPENROUTER_API_KEY=${apiKey}`;
+        }
+        return line;
+      }).filter(l => l.trim() !== '' || found);
+
+      if (!found) newLines.push(`OPENROUTER_API_KEY=${apiKey}`);
+      await fs.writeFile(envPath, newLines.join('\n') + '\n');
+      process.env.OPENROUTER_API_KEY = apiKey;
+
+      return res.json({ success: true, message: 'OpenRouter API key verified and saved.' });
+    } else {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/gemini/verify-api-key', async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    if (!apiKey) return res.status(400).json({ error: 'API key is required' });
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+
+    if (response.ok) {
+      const envPath = path.join(process.cwd(), '.env');
+      let envContent = '';
+      try { envContent = await fs.readFile(envPath, 'utf8'); } catch {}
+
+      const lines = envContent.split('\n');
+      let found = false;
+      const newLines = lines.map(line => {
+        if (line.trim().startsWith('GOOGLE_API_KEY=')) {
+          found = true;
+          return `GOOGLE_API_KEY=${apiKey}`;
+        }
+        return line;
+      }).filter(l => l.trim() !== '' || found);
+
+      if (!found) newLines.push(`GOOGLE_API_KEY=${apiKey}`);
+      await fs.writeFile(envPath, newLines.join('\n') + '\n');
+      process.env.GOOGLE_API_KEY = apiKey;
+
+      return res.json({ success: true, message: 'Google API key verified and saved.' });
+    } else {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/codex/verify-api-key', async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    if (!apiKey) return res.status(400).json({ error: 'API key is required' });
+
+    const response = await fetch('https://api.openai.com/v1/models', {
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    });
+
+    if (response.ok) {
+      const envPath = path.join(process.cwd(), '.env');
+      let envContent = '';
+      try { envContent = await fs.readFile(envPath, 'utf8'); } catch {}
+
+      const lines = envContent.split('\n');
+      let found = false;
+      const newLines = lines.map(line => {
+        if (line.trim().startsWith('OPENAI_API_KEY=')) {
+          found = true;
+          return `OPENAI_API_KEY=${apiKey}`;
+        }
+        return line;
+      }).filter(l => l.trim() !== '' || found);
+
+      if (!found) newLines.push(`OPENAI_API_KEY=${apiKey}`);
+      await fs.writeFile(envPath, newLines.join('\n') + '\n');
+      process.env.OPENAI_API_KEY = apiKey;
+
+      return res.json({ success: true, message: 'OpenAI API key verified and saved.' });
+    } else {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 router.post('/claude/verify-custom-api', async (req, res) => {
   try {
@@ -609,17 +795,23 @@ router.post('/claude/verify-custom-api', async (req, res) => {
 
       const keysToUpdate = {
         'ANTHROPIC_BASE_URL': baseUrl || 'https://api.anthropic.com',
-        'ANTHROPIC_AUTH_TOKEN': token,
+        'ANTHROPIC_API_KEY': token,
         'CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS': '1'
       };
+
+      const keysToRemove = new Set(['ANTHROPIC_AUTH_TOKEN']);
 
       const newLines = [];
       const existingKeys = new Set();
       envContent.split('\n').forEach(line => {
         const [key] = line.split('=');
-        if (keysToUpdate[key.trim()]) {
-          newLines.push(`${key.trim()}=${keysToUpdate[key.trim()]}`);
-          existingKeys.add(key.trim());
+        const trimmedKey = key.trim();
+        if (keysToRemove.has(trimmedKey)) {
+          return;
+        }
+        if (keysToUpdate[trimmedKey]) {
+          newLines.push(`${trimmedKey}=${keysToUpdate[trimmedKey]}`);
+          existingKeys.add(trimmedKey);
         } else if (line.trim()) {
           newLines.push(line);
         }
@@ -636,12 +828,128 @@ router.post('/claude/verify-custom-api', async (req, res) => {
       Object.entries(keysToUpdate).forEach(([key, val]) => {
         process.env[key] = val;
       });
+      delete process.env.ANTHROPIC_AUTH_TOKEN;
 
       return res.json({ success: true, message: 'Custom API verified and applied.' });
     } else {
       const err = await response.text();
       return res.status(response.status).json({ error: `Verification failed: ${err}` });
     }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Local GPU / Ollama routes
+// ---------------------------------------------------------------------------
+
+import { detectGPUs, checkOllamaStatus, pullOllamaModel } from '../local-gpu.js';
+
+router.get('/local/gpu-info', async (req, res) => {
+  try {
+    const result = await detectGPUs();
+    return res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/local/status', async (req, res) => {
+  try {
+    const serverUrl = process.env.LOCAL_GPU_SERVER_URL || 'http://localhost:11434';
+    const status = await checkOllamaStatus(serverUrl);
+
+    if (status.running) {
+      const gpus = await detectGPUs().catch(() => ({ gpus: [] }));
+      const hasGpu = gpus.gpus && gpus.gpus.length > 0;
+
+      return res.json(buildStatusPayload({
+        authenticated: true,
+        email: `Ollama · ${status.models.length} model${status.models.length !== 1 ? 's' : ''}${hasGpu ? ' · GPU detected' : ''}`,
+        cliAvailable: true,
+        cliCommand: null,
+      }, 'local'));
+    }
+
+    return res.json(buildStatusPayload({
+      authenticated: false,
+      email: null,
+      error: status.error,
+      cliAvailable: true,
+      cliCommand: null,
+      installHint: 'Install Ollama from https://ollama.com and run: ollama serve',
+    }, 'local'));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/local/models', async (req, res) => {
+  try {
+    const serverUrl = req.query.serverUrl || process.env.LOCAL_GPU_SERVER_URL || 'http://localhost:11434';
+    const status = await checkOllamaStatus(serverUrl);
+    if (!status.running) {
+      return res.status(503).json({ error: 'Ollama is not running', models: [] });
+    }
+
+    const gpus = await detectGPUs().catch(() => ({ gpus: [] }));
+    const hasGpu = gpus.gpus && gpus.gpus.length > 0;
+    let maxVramMb = 0;
+    if (hasGpu) {
+      for (const gpu of gpus.gpus) {
+        if (gpu.memoryTotal) maxVramMb = Math.max(maxVramMb, gpu.memoryTotal);
+      }
+    }
+
+    return res.json({
+      models: status.models,
+      hasGpu,
+      maxVramMb,
+      gpuCount: gpus.gpus.length,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/local/pull-model', async (req, res) => {
+  try {
+    const { modelName, serverUrl } = req.body;
+    if (!modelName) return res.status(400).json({ error: 'modelName is required' });
+
+    const url = serverUrl || process.env.LOCAL_GPU_SERVER_URL || 'http://localhost:11434';
+    await pullOllamaModel(url, modelName);
+    return res.json({ success: true, message: `Model "${modelName}" pulled successfully.` });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/local/save-config', async (req, res) => {
+  try {
+    const { serverUrl } = req.body;
+    if (serverUrl) {
+      const envPath = path.join(process.cwd(), '.env');
+      let envContent = '';
+      try { envContent = await fs.readFile(envPath, 'utf8'); } catch {}
+
+      const lines = envContent.split('\n');
+      let found = false;
+      const newLines = lines.map(line => {
+        if (line.trim().startsWith('LOCAL_GPU_SERVER_URL=')) {
+          found = true;
+          return `LOCAL_GPU_SERVER_URL=${serverUrl}`;
+        }
+        return line;
+      }).filter(l => l.trim() !== '' || found);
+
+      if (!found) newLines.push(`LOCAL_GPU_SERVER_URL=${serverUrl}`);
+      await fs.writeFile(envPath, newLines.join('\n') + '\n');
+      process.env.LOCAL_GPU_SERVER_URL = serverUrl;
+    }
+
+    return res.json({ success: true, message: 'Local GPU configuration saved.' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

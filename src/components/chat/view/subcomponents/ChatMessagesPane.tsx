@@ -7,14 +7,13 @@ import AgentTurnContainer from './AgentTurnContainer';
 import ProviderSelectionEmptyState from './ProviderSelectionEmptyState';
 import SessionProviderLogo from '../../../SessionProviderLogo';
 import { Markdown } from './Markdown';
-import type { ChatMessage } from '../../types/types';
+import type { AttachedPrompt, ChatMessage } from '../../types/types';
 import type { ProviderAvailability } from '../../types/types';
 import type { Project, ProjectSession, SessionMode, SessionProvider } from '../../../../types/app';
 import AssistantThinkingIndicator from './AssistantThinkingIndicator';
 import { getIntrinsicMessageKey } from '../../utils/messageKeys';
 import { groupMessagesIntoTurns } from '../../utils/groupAgentTurns';
-
-const WORKSPACE_QA_GREETING = `Ask about any file, module, or implementation detail in this workspace. I will stay focused on code and project structure unless you explicitly ask to start research planning.`;
+import { getProviderDisplayName } from '../../utils/chatFormatting';
 
 interface ChatMessagesPaneProps {
   scrollContainerRef: RefObject<HTMLDivElement>;
@@ -28,6 +27,7 @@ interface ChatMessagesPaneProps {
   setProvider: (provider: SessionProvider) => void;
   textareaRef: RefObject<HTMLTextAreaElement>;
   setInput: Dispatch<SetStateAction<string>>;
+  setAttachedPrompt?: (prompt: AttachedPrompt | null) => void;
   claudeModel: string;
   setClaudeModel: (model: string) => void;
   cursorModel: string;
@@ -36,6 +36,10 @@ interface ChatMessagesPaneProps {
   setCodexModel: (model: string) => void;
   geminiModel: string;
   setGeminiModel: (model: string) => void;
+  openrouterModel: string;
+  setOpenrouterModel: (model: string) => void;
+  localModel: string;
+  setLocalModel: (model: string) => void;
   isLoadingMoreMessages: boolean;
   hasMoreMessages: boolean;
   totalMessages: number;
@@ -52,15 +56,18 @@ interface ChatMessagesPaneProps {
   onFileOpen?: (filePath: string, diffInfo?: unknown) => void;
   onShowSettings?: () => void;
   onGrantToolPermission: (suggestion: { entry: string; toolName: string }) => { success: boolean };
+  onSuggestShellEdit?: () => void;
   autoExpandTools?: boolean;
   showRawParameters?: boolean;
   showThinking?: boolean;
   selectedProject: Project;
   isLoading: boolean;
+  statusText?: string | null;
   intakeGreeting?: string | null;
   providerAvailability: Record<SessionProvider, ProviderAvailability>;
   newSessionMode?: SessionMode;
   onNewSessionModeChange?: (mode: SessionMode) => void;
+  onRetry?: () => void;
 }
 
 export default function ChatMessagesPane({
@@ -75,6 +82,7 @@ export default function ChatMessagesPane({
   setProvider,
   textareaRef,
   setInput,
+  setAttachedPrompt,
   claudeModel,
   setClaudeModel,
   cursorModel,
@@ -83,6 +91,10 @@ export default function ChatMessagesPane({
   setCodexModel,
   geminiModel,
   setGeminiModel,
+  openrouterModel,
+  setOpenrouterModel,
+  localModel,
+  setLocalModel,
   isLoadingMoreMessages,
   hasMoreMessages,
   totalMessages,
@@ -99,15 +111,18 @@ export default function ChatMessagesPane({
   onFileOpen,
   onShowSettings,
   onGrantToolPermission,
+  onSuggestShellEdit,
   autoExpandTools,
   showRawParameters,
   showThinking,
   selectedProject,
   isLoading,
+  statusText,
   intakeGreeting,
   providerAvailability,
   newSessionMode = 'research',
   onNewSessionModeChange,
+  onRetry,
 }: ChatMessagesPaneProps) {
   const { t } = useTranslation('chat');
   const messageKeyMapRef = useRef<WeakMap<ChatMessage, string>>(new WeakMap());
@@ -142,6 +157,25 @@ export default function ChatMessagesPane({
     () => groupMessagesIntoTurns(visibleMessages, isLoading),
     [visibleMessages, isLoading]
   );
+  const latestEditableUserMessage = useMemo(() => {
+    if (!selectedSession) {
+      return null;
+    }
+
+    for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
+      const message = chatMessages[index];
+      if (
+        message.type === 'user' &&
+        !message.isSkillContent &&
+        typeof message.content === 'string' &&
+        message.content.trim()
+      ) {
+        return message;
+      }
+    }
+
+    return null;
+  }, [chatMessages, selectedSession]);
 
   return (
     <div
@@ -174,8 +208,13 @@ export default function ChatMessagesPane({
             setCodexModel={setCodexModel}
             geminiModel={geminiModel}
             setGeminiModel={setGeminiModel}
+            openrouterModel={openrouterModel}
+            setOpenrouterModel={setOpenrouterModel}
+            localModel={localModel}
+            setLocalModel={setLocalModel}
             projectName={selectedProject.name}
             setInput={setInput}
+            setAttachedPrompt={setAttachedPrompt}
             providerAvailability={providerAvailability}
             newSessionMode={newSessionMode}
             onNewSessionModeChange={onNewSessionModeChange}
@@ -187,7 +226,7 @@ export default function ChatMessagesPane({
                   <SessionProviderLogo provider={provider} className="w-full h-full" />
                 </div>
                 <div className="text-xs font-semibold text-gray-900 dark:text-white">
-                  {t('messageTypes.claude')}
+                  {getProviderDisplayName(provider)}
                 </div>
               </div>
               <div className="w-full pl-0">
@@ -209,7 +248,7 @@ export default function ChatMessagesPane({
               </div>
               <div className="w-full pl-0">
                 <Markdown className="prose prose-md max-w-none dark:prose-invert prose-gray text-[15.5px] leading-relaxed">
-                  {WORKSPACE_QA_GREETING}
+                  {t('session.mode.workspaceQaGreeting')}
                 </Markdown>
               </div>
             </div>
@@ -305,11 +344,14 @@ export default function ChatMessagesPane({
                   onFileOpen={onFileOpen}
                   onShowSettings={onShowSettings}
                   onGrantToolPermission={onGrantToolPermission}
+                  canSuggestShellEdit={item.message === latestEditableUserMessage}
+                  onSuggestShellEdit={item.message === latestEditableUserMessage ? onSuggestShellEdit : undefined}
                   autoExpandTools={autoExpandTools}
                   showRawParameters={showRawParameters}
                   showThinking={showThinking}
                   selectedProject={selectedProject}
                   provider={provider}
+                  onRetry={onRetry}
                 />
               );
             }
@@ -328,13 +370,14 @@ export default function ChatMessagesPane({
                 showThinking={showThinking}
                 selectedProject={selectedProject}
                 provider={provider}
+                onRetry={onRetry}
               />
             );
           })}
         </>
       )}
 
-      {isLoading && <AssistantThinkingIndicator selectedProvider={provider} />}
+      {isLoading && <AssistantThinkingIndicator selectedProvider={provider} statusText={statusText} />}
       </div>
     </div>
   );

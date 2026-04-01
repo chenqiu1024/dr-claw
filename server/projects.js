@@ -67,6 +67,13 @@ import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import os from 'os';
 import { stripInternalContextPrefix } from './utils/sessionFormatting.js';
+import {
+  extractSessionModeFromMetadata,
+  extractSessionModeFromText,
+  inferSessionModeFromUserMessage,
+  normalizeSessionMode,
+  readExplicitSessionModeFromMetadata,
+} from './utils/sessionMode.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DRCLAW_SKILLS_DIR = path.join(__dirname, '..', 'skills');
@@ -254,18 +261,6 @@ function buildTrashEntry(projectName, projectInfo = null, dbEntry = null) {
     canRestore: Boolean(trashMeta.originalPath && filesExist),
     filesExist,
   };
-}
-
-function normalizeSessionMode(value) {
-    return value === 'workspace_qa' ? 'workspace_qa' : 'research';
-}
-
-function extractSessionModeFromMetadata(metadata) {
-    if (!metadata || typeof metadata !== 'object') {
-        return 'research';
-    }
-
-    return normalizeSessionMode(metadata.sessionMode || metadata.mode);
 }
 
 function normalizeTaskStatus(status) {
@@ -677,7 +672,7 @@ async function saveProjectConfig(config) {
 }
 
 export function encodeProjectPath(projectPath) {
-  return path.resolve(projectPath).replace(/[\\/:\s~_]/g, '-');
+  return path.resolve(projectPath).replace(/[\\/:\s~_.]/g, '-');
 }
 
 // Generate better display name from path
@@ -862,6 +857,7 @@ function mapIndexedSessionToProjectSession(session, provider) {
   const createdAt = session?.created_at || session?.createdAt || lastActivity;
   const messageCount = Number(session?.message_count ?? session?.messageCount ?? 0);
   const baseName = session?.display_name || session?.name || session?.summary || null;
+  const tags = Array.isArray(session?.tags) ? session.tags : [];
 
   if (provider === 'cursor') {
     return {
@@ -871,6 +867,7 @@ function mapIndexedSessionToProjectSession(session, provider) {
       lastActivity,
       messageCount,
       mode,
+      tags,
       __provider: 'cursor',
     };
   }
@@ -884,6 +881,7 @@ function mapIndexedSessionToProjectSession(session, provider) {
       lastActivity,
       messageCount,
       mode,
+      tags,
       __provider: 'codex',
     };
   }
@@ -897,7 +895,22 @@ function mapIndexedSessionToProjectSession(session, provider) {
       lastActivity,
       messageCount,
       mode,
+      tags,
       __provider: 'gemini',
+    };
+  }
+
+  if (provider === 'openrouter') {
+    return {
+      id: session.id,
+      summary: baseName || 'OpenRouter Session',
+      name: baseName || 'OpenRouter Session',
+      createdAt,
+      lastActivity,
+      messageCount,
+      mode,
+      tags,
+      __provider: 'openrouter',
     };
   }
 
@@ -908,8 +921,237 @@ function mapIndexedSessionToProjectSession(session, provider) {
     lastActivity,
     messageCount,
     mode,
+    tags,
     __provider: 'claude',
   };
+}
+
+function getSessionPlaceholderName(provider) {
+  switch (provider) {
+    case 'cursor':
+      return 'Untitled Session';
+    case 'codex':
+      return 'Codex Session';
+    case 'gemini':
+      return 'Gemini Session';
+    case 'openrouter':
+      return 'OpenRouter Session';
+    default:
+      return 'New Session';
+  }
+}
+
+function isPlaceholderSessionName(provider, displayName) {
+  return String(displayName || '').trim() === getSessionPlaceholderName(provider);
+}
+
+async function shouldRefreshIndexedSession(provider, indexedSession, parsedSession) {
+  if (!parsedSession) {
+    return false;
+  }
+
+  if (!indexedSession) {
+    return true;
+  }
+
+  const indexedName = String(indexedSession.display_name || indexedSession.name || indexedSession.summary || '').trim();
+  const parsedName = String(parsedSession.summary || parsedSession.name || '').trim();
+  if (parsedName && indexedName !== parsedName) {
+    return true;
+  }
+
+  const indexedCount = Number(indexedSession.message_count ?? indexedSession.messageCount ?? 0);
+  const parsedCount = Number(parsedSession.messageCount ?? 0);
+  if (parsedCount > indexedCount) {
+    return true;
+  }
+
+  const { normalizeSessionTimestamp } = await import('./database/db.js');
+  const indexedLastActivity = normalizeSessionTimestamp(indexedSession.last_activity || indexedSession.lastActivity);
+  const parsedLastActivity = normalizeSessionTimestamp(parsedSession.lastActivity);
+  if (parsedLastActivity && parsedLastActivity !== indexedLastActivity) {
+    return true;
+  }
+
+  const indexedMode = extractSessionModeFromMetadata(indexedSession.metadata);
+  const parsedMode = normalizeSessionMode(parsedSession.mode);
+  if (indexedMode !== parsedMode) {
+    return true;
+  }
+
+  return isPlaceholderSessionName(provider, indexedName) && Boolean(parsedName);
+}
+
+async function reconcileIndexedSessionFromSource(projectName, provider, parsedSession, indexedSession = null, projectPath = null) {
+  const { sessionDb, normalizeSessionTimestamp } = await import('./database/db.js');
+
+  const resolvedProjectPath =
+    projectPath ||
+    parsedSession.projectPath ||
+    parsedSession.cwd ||
+    indexedSession?.metadata?.projectPath ||
+    await extractProjectDirectory(projectName).catch(() => null);
+  const metadata = {
+    ...(indexedSession?.metadata && typeof indexedSession.metadata === 'object' ? indexedSession.metadata : {}),
+    sessionMode: normalizeSessionMode(parsedSession.mode),
+    indexState: 'synced',
+  };
+  if (resolvedProjectPath) {
+    metadata.projectPath = resolvedProjectPath;
+  }
+
+  sessionDb.upsertSessionFromSource(parsedSession.id, projectName, provider, {
+    displayName: parsedSession.summary || parsedSession.name || null,
+    lastActivity: normalizeSessionTimestamp(parsedSession.lastActivity),
+    messageCount: Number(parsedSession.messageCount || 0),
+    metadata,
+    createdAt: parsedSession.createdAt || indexedSession?.created_at || null,
+    isStarred: indexedSession?.is_starred ?? 0,
+  });
+}
+
+async function reconcileClaudeSessionIndex(projectName, targetSessionId = null) {
+  if (targetSessionId) {
+    const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
+    const sessionFile = path.join(projectDir, `${targetSessionId}.jsonl`);
+    const { sessionDb } = await import('./database/db.js');
+
+    try {
+      await fs.access(sessionFile);
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        return { sessions: [], hasMore: false, total: 0, session: null };
+      }
+      throw error;
+    }
+
+    const dbSessions = sessionDb.getSessionsByProject(projectName);
+    const dbSessionMap = new Map(dbSessions.filter((session) => session.provider === 'claude').map((session) => [session.id, session]));
+    const projectPath = await extractProjectDirectory(projectName).catch(() => null);
+    const result = await parseJsonlSessions(sessionFile, projectName, dbSessionMap);
+    const session = (result.sessions || []).find((item) => item.id === targetSessionId) || null;
+
+    if (session) {
+      const indexedSession = dbSessionMap.get(session.id) || null;
+      if (await shouldRefreshIndexedSession('claude', indexedSession, session)) {
+        await reconcileIndexedSessionFromSource(projectName, 'claude', session, indexedSession, projectPath);
+      }
+    }
+
+    return {
+      sessions: session ? [session] : [],
+      hasMore: false,
+      total: session ? 1 : 0,
+      session,
+    };
+  }
+
+  return getSessions(projectName, 0, 0);
+}
+
+async function reconcileGeminiSessionIndex(projectPath, options = {}) {
+  const { limit = 0, sessionId = null, projectName = null } = options;
+  return getGeminiSessions(projectPath, {
+    limit,
+    syncIndex: true,
+    sessionId,
+    projectName,
+  });
+}
+
+async function reconcileOpenRouterSessionIndex(projectPath, options = {}) {
+  const { sessionId = null, projectName = null } = options;
+  if (!sessionId) return;
+  const resolvedProjectName = projectName || encodeProjectPath(projectPath);
+  const sessionFile = path.join(os.homedir(), '.dr-claw', 'openrouter-sessions', `${sessionId}.jsonl`);
+  try {
+    const raw = await fs.readFile(sessionFile, 'utf-8');
+    const lines = raw.trim().split('\n').filter(Boolean);
+    let displayName = null;
+    let messageCount = 0;
+    let lastActivity = null;
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.role === 'user' && !displayName) {
+          const raw = (entry.content || '').replace(/\s*\[Context:[^\]]*\]\s*/gi, '').trim();
+          displayName = raw.slice(0, 100) || null;
+        }
+        if (entry.role === 'user' || entry.role === 'assistant') {
+          messageCount++;
+        }
+        if (entry.ts) lastActivity = entry.ts;
+      } catch {}
+    }
+    const { sessionDb } = await import('./database/db.js');
+    sessionDb.upsertSession(
+      sessionId,
+      resolvedProjectName,
+      'openrouter',
+      displayName || 'OpenRouter Session',
+      lastActivity || new Date().toISOString(),
+      messageCount,
+      null,
+    );
+  } catch (err) {
+    console.warn(`[OpenRouter] Failed to reconcile session ${sessionId}:`, err.message);
+  }
+}
+
+async function reconcileLocalGPUSessionIndex(projectPath, options = {}) {
+  const { sessionId = null, projectName = null } = options;
+  if (!sessionId) return;
+  const resolvedProjectName = projectName || encodeProjectPath(projectPath);
+  const sessionFile = path.join(os.homedir(), '.dr-claw', 'localgpu-sessions', `${sessionId}.jsonl`);
+  try {
+    const raw = await fs.readFile(sessionFile, 'utf-8');
+    const lines = raw.trim().split('\n').filter(Boolean);
+    let displayName = null;
+    let messageCount = 0;
+    let lastActivity = null;
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.role === 'user' && !displayName) {
+          const raw = (entry.content || '').replace(/\s*\[Context:[^\]]*\]\s*/gi, '').trim();
+          displayName = raw.slice(0, 100) || null;
+        }
+        if (entry.role === 'user' || entry.role === 'assistant') {
+          messageCount++;
+        }
+        if (entry.ts) lastActivity = entry.ts;
+      } catch {}
+    }
+    const { sessionDb } = await import('./database/db.js');
+    sessionDb.upsertSession(
+      sessionId,
+      resolvedProjectName,
+      'local',
+      displayName || 'Local GPU Session',
+      lastActivity || new Date().toISOString(),
+      messageCount,
+      null,
+    );
+  } catch (err) {
+    console.warn(`[LocalGPU] Failed to reconcile session ${sessionId}:`, err.message);
+  }
+}
+
+async function reconcileCodexSessionIndex(projectPath, options = {}) {
+  const { limit = 0, sessionId = null, previousSessionId = null, projectName = null } = options;
+  const sessions = await getCodexSessions(projectPath, {
+    limit,
+    syncIndex: true,
+    sessionId,
+    projectName,
+  });
+
+  if (previousSessionId && sessionId && previousSessionId !== sessionId) {
+    const { sessionDb } = await import('./database/db.js');
+    sessionDb.migrateSessionId(previousSessionId, sessionId, 'codex', projectName || encodeProjectPath(projectPath));
+  }
+
+  return sessions;
 }
 
 async function getProjects(userId, progressCallback = null) {
@@ -1010,6 +1252,8 @@ async function getProjects(userId, progressCallback = null) {
       const cursorSessions = projectSessions.filter((session) => session.provider === 'cursor');
       const codexSessions = projectSessions.filter((session) => session.provider === 'codex');
       const geminiSessions = projectSessions.filter((session) => session.provider === 'gemini');
+      const openrouterSessions = projectSessions.filter((session) => session.provider === 'openrouter');
+      const localSessions = projectSessions.filter((session) => session.provider === 'local');
 
       project.sessions = claudeSessions.slice(0, 5).map((session) => mapIndexedSessionToProjectSession(session, 'claude'));
       project.sessionMeta = {
@@ -1019,6 +1263,8 @@ async function getProjects(userId, progressCallback = null) {
       project.cursorSessions = cursorSessions.slice(0, 5).map((session) => mapIndexedSessionToProjectSession(session, 'cursor'));
       project.codexSessions = codexSessions.slice(0, 5).map((session) => mapIndexedSessionToProjectSession(session, 'codex'));
       project.geminiSessions = geminiSessions.slice(0, 5).map((session) => mapIndexedSessionToProjectSession(session, 'gemini'));
+      project.openrouterSessions = openrouterSessions.slice(0, 5).map((session) => mapIndexedSessionToProjectSession(session, 'openrouter'));
+      project.localSessions = localSessions.slice(0, 5).map((session) => mapIndexedSessionToProjectSession(session, 'local'));
 
       const taskmasterResult = await detectTaskMasterFolder(actualProjectDir).catch(() => null);
 
@@ -1107,6 +1353,7 @@ async function getSessions(projectName, limit = 5, offset = 0, userId = null) {
     // Usually sessions inherit project ownership, but we store it anyway.
     const dbSessions = sessionDb.getSessionsByProject(projectName);
     const dbSessionMap = new Map(dbSessions.filter(s => s.provider === 'claude').map(s => [s.id, s]));
+    const projectPath = await extractProjectDirectory(projectName).catch(() => null);
 
     // ... (rest of getSessions remains mostly same, but ensures it uses the DB map correctly)
 
@@ -1133,14 +1380,6 @@ async function getSessions(projectName, limit = 5, offset = 0, userId = null) {
       result.sessions.forEach(session => {
         if (!allSessions.has(session.id)) {
           allSessions.set(session.id, session);
-
-          // Upsert new sessions discovered from files to DB for caching
-          if (!dbSessionMap.has(session.id)) {
-            const lastActivity = session.lastActivity instanceof Date ? session.lastActivity.toISOString() : session.lastActivity;
-            sessionDb.upsertSession(session.id, projectName, 'claude', session.summary, lastActivity, session.messageCount, {
-              sessionMode: normalizeSessionMode(session.mode),
-            });
-          }
         }
       });
 
@@ -1217,9 +1456,20 @@ async function getSessions(projectName, limit = 5, offset = 0, userId = null) {
       .filter(session => !session.summary.startsWith('{ "'))
       .sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
 
+    await Promise.all(
+      visibleSessions.map(async (session) => {
+        const indexedSession = dbSessionMap.get(session.id) || null;
+        if (!await shouldRefreshIndexedSession('claude', indexedSession, session)) {
+          return;
+        }
+
+        await reconcileIndexedSessionFromSource(projectName, 'claude', session, indexedSession, projectPath);
+      })
+    );
+
     const total = visibleSessions.length;
-    const paginatedSessions = visibleSessions.slice(offset, offset + limit);
-    const hasMore = offset + limit < total;
+    const paginatedSessions = limit > 0 ? visibleSessions.slice(offset, offset + limit) : visibleSessions.slice(offset);
+    const hasMore = limit > 0 ? offset + limit < total : false;
 
     return {
       sessions: paginatedSessions,
@@ -1274,8 +1524,11 @@ async function parseJsonlSessions(filePath, projectName = null, dbSessionMap = n
                 lastUserMessage: null,
                 lastAssistantMessage: null,
                 mode: dbSessionMap && dbSessionMap.has(entry.sessionId)
-                  ? extractSessionModeFromMetadata(dbSessionMap.get(entry.sessionId).metadata)
-                  : 'research'
+                  ? (readExplicitSessionModeFromMetadata(dbSessionMap.get(entry.sessionId).metadata) || 'research')
+                  : 'research',
+                tags: dbSessionMap && dbSessionMap.has(entry.sessionId)
+                  ? (Array.isArray(dbSessionMap.get(entry.sessionId).tags) ? dbSessionMap.get(entry.sessionId).tags : [])
+                  : []
               });
             }
 
@@ -1324,9 +1577,16 @@ async function parseJsonlSessions(filePath, projectName = null, dbSessionMap = n
                 textContent === 'Warmup' // Explicitly filter out "Warmup"
               );
 
+              const modeFromMessage = typeof textContent === 'string'
+                ? extractSessionModeFromText(textContent)
+                : null;
+              if (modeFromMessage) {
+                session.mode = modeFromMessage;
+              }
+
               if (textContent && textContent.length > 0) {
                 const cleaned = stripInternalContextPrefix(textContent, false);
-                
+
                 const isSystemMessage = typeof cleaned === 'string' && (
                   cleaned.startsWith('<command-name>') ||
                   cleaned.startsWith('<command-message>') ||
@@ -1581,6 +1841,152 @@ async function getSessionMessages(projectName, sessionId, limit = null, offset =
     }
   }
 
+  if (provider === 'openrouter') {
+    const openrouterSessionFile = path.join(os.homedir(), '.dr-claw', 'openrouter-sessions', `${sessionId}.jsonl`);
+    console.log(`[DEBUG] Reading OpenRouter session file: ${openrouterSessionFile}`);
+    try {
+      await fs.access(openrouterSessionFile);
+      const messages = [];
+      const raw = await fs.readFile(openrouterSessionFile, 'utf-8');
+      for (const line of raw.trim().split('\n').filter(Boolean)) {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.role === 'system') continue;
+          if (entry.role === 'user') {
+            messages.push({
+              type: 'message',
+              role: 'user',
+              content: entry.content || '',
+              timestamp: entry.ts,
+            });
+          } else if (entry.role === 'assistant') {
+            // Emit text content as a message if present
+            if (entry.content) {
+              messages.push({
+                type: 'message',
+                role: 'assistant',
+                content: entry.content,
+                timestamp: entry.ts,
+              });
+            }
+            // Emit tool_use entries for each tool call (matches Codex/Claude history format)
+            if (Array.isArray(entry.tool_calls)) {
+              for (const tc of entry.tool_calls) {
+                let toolInput;
+                try { toolInput = tc.function?.arguments || '{}'; } catch { toolInput = '{}'; }
+                messages.push({
+                  type: 'tool_use',
+                  timestamp: entry.ts,
+                  toolName: tc.function?.name || 'unknown',
+                  toolInput,
+                  toolCallId: tc.id,
+                });
+              }
+            }
+          } else if (entry.role === 'tool') {
+            messages.push({
+              type: 'tool_result',
+              role: 'tool',
+              output: entry.content,
+              tool_call_id: entry.tool_call_id,
+              toolCallId: entry.tool_call_id,
+              timestamp: entry.ts,
+            });
+          }
+        } catch {}
+      }
+
+      console.log(`[DEBUG] Found ${messages.length} valid messages in OpenRouter session file`);
+      const total = messages.length;
+      if (limit === null) return messages;
+
+      const startIndex = Math.max(0, total - offset - limit);
+      const endIndex = total - offset;
+      return {
+        messages: messages.slice(startIndex, endIndex),
+        total,
+        hasMore: startIndex > 0,
+        offset,
+        limit,
+      };
+    } catch (e) {
+      console.warn(`Could not read OpenRouter session ${sessionId}:`, e.message);
+      return limit === null ? [] : { messages: [], total: 0, hasMore: false };
+    }
+  }
+
+  if (provider === 'local') {
+    const localSessionFile = path.join(os.homedir(), '.dr-claw', 'localgpu-sessions', `${sessionId}.jsonl`);
+    console.log(`[DEBUG] Reading Local GPU session file: ${localSessionFile}`);
+    try {
+      await fs.access(localSessionFile);
+      const messages = [];
+      const raw = await fs.readFile(localSessionFile, 'utf-8');
+      for (const line of raw.trim().split('\n').filter(Boolean)) {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.role === 'system') continue;
+          if (entry.role === 'user') {
+            messages.push({
+              type: 'message',
+              role: 'user',
+              content: entry.content || '',
+              timestamp: entry.ts,
+            });
+          } else if (entry.role === 'assistant') {
+            if (entry.content) {
+              messages.push({
+                type: 'message',
+                role: 'assistant',
+                content: entry.content,
+                timestamp: entry.ts,
+              });
+            }
+            if (Array.isArray(entry.tool_calls)) {
+              for (const tc of entry.tool_calls) {
+                let toolInput;
+                try { toolInput = tc.function?.arguments || '{}'; } catch { toolInput = '{}'; }
+                messages.push({
+                  type: 'tool_use',
+                  timestamp: entry.ts,
+                  toolName: tc.function?.name || 'unknown',
+                  toolInput,
+                  toolCallId: tc.id,
+                });
+              }
+            }
+          } else if (entry.role === 'tool') {
+            messages.push({
+              type: 'tool_result',
+              role: 'tool',
+              output: entry.content,
+              tool_call_id: entry.tool_call_id,
+              toolCallId: entry.tool_call_id,
+              timestamp: entry.ts,
+            });
+          }
+        } catch {}
+      }
+
+      console.log(`[DEBUG] Found ${messages.length} valid messages in Local GPU session file`);
+      const total = messages.length;
+      if (limit === null) return messages;
+
+      const startIndex = Math.max(0, total - offset - limit);
+      const endIndex = total - offset;
+      return {
+        messages: messages.slice(startIndex, endIndex),
+        total,
+        hasMore: startIndex > 0,
+        offset,
+        limit,
+      };
+    } catch (e) {
+      console.warn(`Could not read Local GPU session ${sessionId}:`, e.message);
+      return limit === null ? [] : { messages: [], total: 0, hasMore: false };
+    }
+  }
+
   const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
 
   try {
@@ -1719,17 +2125,85 @@ async function renameProject(projectName, newDisplayName, userId = null) {
 
 // Delete a session from a project
 async function deleteSession(projectName, sessionId, provider = 'claude') {
+  const { sessionDb } = await import('./database/db.js');
+  const indexedSession = sessionDb.getSessionById(sessionId);
+
   if (provider === 'gemini') {
     const geminiSessionFile = path.join(os.homedir(), '.gemini', 'sessions', `${sessionId}.jsonl`);
+    let deletedFile = false;
     try {
-      await fs.access(geminiSessionFile);
       await fs.unlink(geminiSessionFile);
-      console.log(`[Gemini] Deleted session file: ${geminiSessionFile}`);
-      return true;
+      deletedFile = true;
     } catch (e) {
-      console.error(`[Gemini] Failed to delete session ${sessionId}:`, e.message);
-      throw new Error(`Failed to delete Gemini session: ${e.message}`);
+      if (e?.code !== 'ENOENT') {
+        console.error(`[Gemini] Failed to delete session ${sessionId}:`, e.message);
+        throw new Error(`Failed to delete Gemini session: ${e.message}`);
+      }
     }
+
+    const deletedIndex = indexedSession?.provider === 'gemini' || deletedFile;
+    if (deletedIndex) {
+      sessionDb.deleteSession(sessionId);
+    }
+
+    if (deletedFile || deletedIndex) {
+      console.log(`[Gemini] Deleted session ${sessionId}${deletedFile ? ` file: ${geminiSessionFile}` : ' from index only'}`);
+      return true;
+    }
+
+    throw new Error(`Gemini session ${sessionId} not found in file system or index`);
+  }
+
+  if (provider === 'openrouter') {
+    const openrouterSessionFile = path.join(os.homedir(), '.dr-claw', 'openrouter-sessions', `${sessionId}.jsonl`);
+    let deletedFile = false;
+    try {
+      await fs.unlink(openrouterSessionFile);
+      deletedFile = true;
+    } catch (e) {
+      if (e?.code !== 'ENOENT') {
+        console.error(`[OpenRouter] Failed to delete session ${sessionId}:`, e.message);
+        throw new Error(`Failed to delete OpenRouter session: ${e.message}`);
+      }
+    }
+
+    const deletedIndex = indexedSession?.provider === 'openrouter' || deletedFile;
+    if (deletedIndex) {
+      sessionDb.deleteSession(sessionId);
+    }
+
+    if (deletedFile || deletedIndex) {
+      console.log(`[OpenRouter] Deleted session ${sessionId}${deletedFile ? ` file: ${openrouterSessionFile}` : ' from index only'}`);
+      return true;
+    }
+
+    throw new Error(`OpenRouter session ${sessionId} not found in file system or index`);
+  }
+
+  if (provider === 'local') {
+    const localSessionFile = path.join(os.homedir(), '.dr-claw', 'localgpu-sessions', `${sessionId}.jsonl`);
+    let deletedFile = false;
+    try {
+      await fs.unlink(localSessionFile);
+      deletedFile = true;
+    } catch (e) {
+      if (e?.code !== 'ENOENT') {
+        console.error(`[LocalGPU] Failed to delete session ${sessionId}:`, e.message);
+        throw new Error(`Failed to delete Local GPU session: ${e.message}`);
+      }
+    }
+
+    const deletedIndex = indexedSession?.provider === 'local' || deletedFile;
+    if (deletedIndex) {
+      sessionDb.deleteSession(sessionId);
+    }
+
+    if (deletedFile || deletedIndex) {
+      console.log(`[LocalGPU] Deleted session ${sessionId}${deletedFile ? ` file: ${localSessionFile}` : ' from index only'}`);
+      return true;
+    }
+
+    throw new Error(`Local GPU session ${sessionId} not found in file system or index`);
   }
 
   const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
@@ -1738,45 +2212,59 @@ async function deleteSession(projectName, sessionId, provider = 'claude') {
     const files = await fs.readdir(projectDir);
     const jsonlFiles = files.filter(file => file.endsWith('.jsonl'));
 
-    if (jsonlFiles.length === 0) {
-      throw new Error('No session files found for this project');
-    }
+    let matchedFiles = 0;
+    let removedEntries = 0;
 
-    // Check all JSONL files to find which one contains the session
     for (const file of jsonlFiles) {
       const jsonlFile = path.join(projectDir, file);
       const content = await fs.readFile(jsonlFile, 'utf8');
       const lines = content.split('\n').filter(line => line.trim());
+      let fileRemovedEntries = 0;
 
-      // Check if this file contains the session
-      const hasSession = lines.some(line => {
+      const filteredLines = lines.filter(line => {
         try {
           const data = JSON.parse(line);
-          return data.sessionId === sessionId;
+          if (data.sessionId === sessionId) {
+            fileRemovedEntries += 1;
+            return false;
+          }
+          return true;
         } catch {
-          return false;
+          return true; // Keep malformed lines
         }
       });
 
-      if (hasSession) {
-        // Filter out all entries for this session
-        const filteredLines = lines.filter(line => {
-          try {
-            const data = JSON.parse(line);
-            return data.sessionId !== sessionId;
-          } catch {
-            return true; // Keep malformed lines
-          }
-        });
+      if (fileRemovedEntries > 0) {
+        matchedFiles += 1;
+        removedEntries += fileRemovedEntries;
 
-        // Write back the filtered content
-        await fs.writeFile(jsonlFile, filteredLines.join('\n') + (filteredLines.length > 0 ? '\n' : ''));
-        return true;
+        if (filteredLines.length > 0) {
+          await fs.writeFile(jsonlFile, filteredLines.join('\n') + '\n');
+        } else {
+          await fs.unlink(jsonlFile);
+        }
       }
     }
 
-    throw new Error(`Session ${sessionId} not found in any files`);
+    const deletedIndex = indexedSession?.provider === 'claude' || matchedFiles > 0;
+    if (deletedIndex) {
+      sessionDb.deleteSession(sessionId);
+    }
+
+    if (matchedFiles > 0 || deletedIndex) {
+      console.log(
+        `[Claude] Deleted session ${sessionId} from ${matchedFiles} file(s), removed ${removedEntries} entr${removedEntries === 1 ? 'y' : 'ies'}`,
+      );
+      return true;
+    }
+
+    throw new Error(`Session ${sessionId} not found in any files or index`);
   } catch (error) {
+    if (error?.code === 'ENOENT' && indexedSession?.provider === 'claude') {
+      sessionDb.deleteSession(sessionId);
+      console.log(`[Claude] Deleted session ${sessionId} from index only; project directory missing: ${projectDir}`);
+      return true;
+    }
     console.error(`Error deleting session ${sessionId} from project ${projectName}:`, error);
     throw error;
   }
@@ -2341,7 +2829,27 @@ async function addProjectManually(projectPath, displayName = null, userId = null
     throw new Error(`Path does not exist: ${absolutePath}`);
   }
 
-  const projectName = absolutePath.replace(/[\\/:\s~_]/g, '-');
+  const projectName = encodeProjectPath(absolutePath);
+
+  // Check for existing project with the same path (may have legacy encoded ID)
+  const existingByPath = projectDb.getProjectByPath(absolutePath, userId);
+  if (existingByPath) {
+    if (existingByPath.id !== projectName) {
+      // Legacy ID detected — migrate to new encoding
+      projectDb.migrateProjectIdentity(existingByPath.id, projectName, absolutePath);
+    }
+    return {
+      name: projectName,
+      path: absolutePath,
+      fullPath: absolutePath,
+      displayName: displayName || existingByPath.display_name || await generateDisplayName(projectName, absolutePath),
+      isManuallyAdded: Boolean(existingByPath.metadata?.manuallyAdded),
+      createdAt: existingByPath.created_at,
+      sessions: [],
+      cursorSessions: [],
+      alreadyExists: true,
+    };
+  }
 
   projectDb.upsertProject(projectName, userId, displayName, absolutePath, 0, new Date().toISOString(), { manuallyAdded: true });
 
@@ -2379,16 +2887,26 @@ async function addProjectManually(projectPath, displayName = null, userId = null
 }
 
 // Fetch Cursor sessions for a given project path
-async function getCursorSessions(projectPath) {
+async function getCursorSessions(projectPath, options = {}) {
   try {
+    const { sessionDb } = await import('./database/db.js');
+    const { limit = 5, projectName = encodeProjectPath(projectPath) } = options;
     const candidatePaths = [projectPath];
     const legacyProjectPath = remapCurrentProjectPathToLegacy(projectPath);
+    const legacyProjectName = legacyProjectPath ? encodeProjectPath(legacyProjectPath) : null;
     if (legacyProjectPath && legacyProjectPath !== projectPath) {
       candidatePaths.push(legacyProjectPath);
     }
 
     const sessions = [];
     const seenSessionIds = new Set();
+    const dbSessions = [
+      ...sessionDb.getSessionsByProject(projectName),
+      ...(legacyProjectName && legacyProjectName !== projectName
+        ? sessionDb.getSessionsByProject(legacyProjectName)
+        : []),
+    ];
+    const dbSessionMap = new Map(dbSessions.filter((session) => session.provider === 'cursor').map((session) => [session.id, session]));
 
     for (const candidatePath of candidatePaths) {
       const cwdId = crypto.createHash('md5').update(candidatePath).digest('hex');
@@ -2468,7 +2986,13 @@ async function getCursorSessions(projectPath) {
             createdAt,
             lastActivity: createdAt,
             messageCount: messageCountResult.count || 0,
-            projectPath
+            mode: dbSessionMap.has(sessionId)
+              ? (readExplicitSessionModeFromMetadata(dbSessionMap.get(sessionId).metadata) || 'research')
+              : 'research',
+            projectPath,
+            tags: dbSessionMap.has(sessionId)
+              ? (Array.isArray(dbSessionMap.get(sessionId).tags) ? dbSessionMap.get(sessionId).tags : [])
+              : [],
           });
           seenSessionIds.add(sessionId);
         } catch (error) {
@@ -2478,7 +3002,7 @@ async function getCursorSessions(projectPath) {
     }
 
     sessions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    return sessions.slice(0, 5);
+    return sessions.slice(0, limit);
   } catch (error) {
     console.error('Error fetching Cursor sessions:', error);
     return [];
@@ -2491,10 +3015,14 @@ async function getGeminiSessions(projectPath, optionsOrUserId = null) {
   const options = optionsOrUserId && typeof optionsOrUserId === 'object' && !Array.isArray(optionsOrUserId)
     ? optionsOrUserId
     : {};
-  const { limit = 5, indexRef = null } = options;
+  const { limit = 5, indexRef = null, syncIndex = false, sessionId: targetSessionId = null, projectName: providedProjectName = null } = options;
+  const projectName = providedProjectName || encodeProjectPath(projectPath);
   try {
+    const { sessionDb } = await import('./database/db.js');
     const normalizedProjectPath = await normalizeComparablePath(projectPath);
-    const normalizedLegacyProjectPath = await normalizeComparablePath(remapCurrentProjectPathToLegacy(projectPath));
+    const legacyProjectPath = remapCurrentProjectPathToLegacy(projectPath);
+    const normalizedLegacyProjectPath = await normalizeComparablePath(legacyProjectPath);
+    const legacyProjectName = legacyProjectPath ? encodeProjectPath(legacyProjectPath) : null;
     if (!normalizedProjectPath) {
       return [];
     }
@@ -2510,13 +3038,44 @@ async function getGeminiSessions(projectPath, optionsOrUserId = null) {
       sessions.push(...(sessionsByProject.get(normalizedLegacyProjectPath) || []));
     }
 
+    const dbSessions = [
+      ...sessionDb.getSessionsByProject(projectName),
+      ...(legacyProjectName && legacyProjectName !== projectName
+        ? sessionDb.getSessionsByProject(legacyProjectName)
+        : []),
+    ];
+    const dbSessionMap = new Map(dbSessions.filter((session) => session.provider === 'gemini').map((session) => [session.id, session]));
+
     const dedupedSessions = Array.from(new Map(sessions.map((session) => [session.id, session])).values())
       .map((session) => ({
         ...session,
+        mode: dbSessionMap.has(session.id)
+          ? (readExplicitSessionModeFromMetadata(dbSessionMap.get(session.id).metadata) || normalizeSessionMode(session.mode))
+          : normalizeSessionMode(session.mode),
         projectPath,
+        tags: dbSessionMap.has(session.id)
+          ? (Array.isArray(dbSessionMap.get(session.id).tags) ? dbSessionMap.get(session.id).tags : [])
+          : (Array.isArray(session.tags) ? session.tags : []),
       }));
+    const filteredSessions = targetSessionId
+      ? dedupedSessions.filter((session) => session.id === targetSessionId)
+      : dedupedSessions;
 
-    return limit > 0 ? dedupedSessions.slice(0, limit) : dedupedSessions;
+    if (syncIndex) {
+      const { sessionDb } = await import('./database/db.js');
+      const projectName = providedProjectName || encodeProjectPath(projectPath);
+      await Promise.allSettled(
+        filteredSessions.map(async (session) => {
+          const indexedSession = sessionDb.getSessionById(session.id);
+          await reconcileIndexedSessionFromSource(projectName, 'gemini', {
+            ...session,
+            summary: session.summary || session.name,
+          }, indexedSession, projectPath);
+        })
+      );
+    }
+
+    return limit > 0 ? filteredSessions.slice(0, limit) : filteredSessions;
   } catch (error) {
     console.error('Error fetching Gemini sessions:', error);
     return [];
@@ -2553,6 +3112,8 @@ async function buildGeminiSessionsIndex() {
       let explicitTitle = indexedSession?.display_name || null;
       let firstMessageText = null;
       let messageCount = 0;
+      // Recovery order: DB metadata -> JSONL metadata -> context marker -> high-confidence heuristic -> default.
+      let detectedSessionMode = readExplicitSessionModeFromMetadata(indexedSession?.metadata);
 
       const fileStream = fsSync.createReadStream(filePath);
       const rl = readline.createInterface({
@@ -2574,6 +3135,11 @@ async function buildGeminiSessionsIndex() {
 
         try {
           const entry = JSON.parse(line);
+          const metadataMode = readExplicitSessionModeFromMetadata(entry.payload || entry);
+          if (metadataMode) {
+            detectedSessionMode = metadataMode;
+          }
+
           const sessionCwd = entry.cwd || entry.payload?.cwd;
           if (sessionCwd) {
             const normalizedSessionCwd = await normalizeComparablePath(sessionCwd);
@@ -2602,8 +3168,16 @@ async function buildGeminiSessionsIndex() {
                 : '';
 
             if (textContent.trim()) {
-              const cleaned = stripInternalContextPrefix(textContent.trim());
-              if (!cleaned.includes('Base directory for this skill:') && !cleaned.startsWith('<command-name>')) {
+              const modeFromContext = extractSessionModeFromText(textContent);
+              if (modeFromContext) {
+                detectedSessionMode = modeFromContext;
+              }
+
+              const cleaned = stripInternalContextPrefix(textContent.trim(), false);
+              if (cleaned && !cleaned.includes('Base directory for this skill:') && !cleaned.startsWith('<command-name>')) {
+                if (!detectedSessionMode) {
+                  detectedSessionMode = inferSessionModeFromUserMessage(cleaned);
+                }
                 const helpMatch = cleaned.match(/Please help me with ["'](.*?)["']/);
                 firstMessageText = helpMatch ? helpMatch[1] : cleaned.split('\n')[0].replace(/#+\s*/, '').trim();
               }
@@ -2635,7 +3209,7 @@ async function buildGeminiSessionsIndex() {
         finalName = 'Untitled Session';
       }
 
-      const sessionMode = extractSessionModeFromMetadata(indexedSession?.metadata);
+      const sessionMode = detectedSessionMode || 'research';
       const resolvedMessageCount = Math.max(indexedMessageCount, messageCount);
       const session = {
         id: sessionId,
@@ -2757,10 +3331,14 @@ async function buildCodexSessionsIndex() {
 
 // Fetch Codex sessions for a given project path
 async function getCodexSessions(projectPath, options = {}) {
-  const { limit = 5, indexRef = null } = options;
+  const { limit = 5, indexRef = null, syncIndex = false, sessionId: targetSessionId = null, projectName: providedProjectName = null } = options;
+  const projectName = providedProjectName || encodeProjectPath(projectPath);
   try {
+    const { sessionDb } = await import('./database/db.js');
     const normalizedProjectPath = await normalizeComparablePath(projectPath);
     const normalizedLegacyProjectPath = await normalizeComparablePath(remapCurrentProjectPathToLegacy(projectPath));
+    const legacyProjectPath = remapCurrentProjectPathToLegacy(projectPath);
+    const legacyProjectName = legacyProjectPath ? encodeProjectPath(legacyProjectPath) : null;
     if (!normalizedProjectPath) {
       return [];
     }
@@ -2777,8 +3355,40 @@ async function getCodexSessions(projectPath, options = {}) {
     }
 
     // Return limited sessions for performance (0 = unlimited for deletion)
-    const dedupedSessions = Array.from(new Map(sessions.map((session) => [session.id, session])).values());
-    return limit > 0 ? dedupedSessions.slice(0, limit) : dedupedSessions;
+    const dbSessions = [
+      ...sessionDb.getSessionsByProject(projectName),
+      ...(legacyProjectName && legacyProjectName !== projectName
+        ? sessionDb.getSessionsByProject(legacyProjectName)
+        : []),
+    ];
+    const dbSessionMap = new Map(dbSessions.filter((session) => session.provider === 'codex').map((session) => [session.id, session]));
+    const dedupedSessions = Array.from(new Map(sessions.map((session) => [session.id, session])).values()).map((session) => ({
+      ...session,
+      mode: dbSessionMap.has(session.id)
+        ? (readExplicitSessionModeFromMetadata(dbSessionMap.get(session.id).metadata) || normalizeSessionMode(session.mode))
+        : normalizeSessionMode(session.mode),
+      tags: dbSessionMap.has(session.id)
+        ? (Array.isArray(dbSessionMap.get(session.id).tags) ? dbSessionMap.get(session.id).tags : [])
+        : (Array.isArray(session.tags) ? session.tags : []),
+    }));
+    const filteredSessions = targetSessionId
+      ? dedupedSessions.filter((session) => session.id === targetSessionId)
+      : dedupedSessions;
+
+    if (syncIndex) {
+      await Promise.allSettled(
+        filteredSessions.map(async (session) => {
+          const indexedSession = sessionDb.getSessionById(session.id);
+          await reconcileIndexedSessionFromSource(projectName, 'codex', {
+            ...session,
+            summary: session.summary || session.name,
+            createdAt: session.createdAt || session.lastActivity,
+          }, indexedSession, projectPath);
+        })
+      );
+    }
+
+    return limit > 0 ? filteredSessions.slice(0, limit) : filteredSessions;
 
   } catch (error) {
     console.error('Error fetching Codex sessions:', error);
@@ -2799,6 +3409,7 @@ async function parseCodexSessionFile(filePath) {
     let lastTimestamp = null;
     let lastUserMessage = null;
     let messageCount = 0;
+    let detectedSessionMode = null;
 
     for await (const line of rl) {
       if (line.trim()) {
@@ -2825,7 +3436,18 @@ async function parseCodexSessionFile(filePath) {
           if (entry.type === 'event_msg' && entry.payload?.type === 'user_message') {
             messageCount++;
             if (entry.payload.message) {
-              lastUserMessage = stripInternalContextPrefix(entry.payload.message);
+              const modeFromMessage = extractSessionModeFromText(entry.payload.message);
+              if (modeFromMessage) {
+                detectedSessionMode = modeFromMessage;
+              }
+
+              const cleanedUserMessage = stripInternalContextPrefix(entry.payload.message, false);
+              if (cleanedUserMessage && !isCodexSystemPromptContent(cleanedUserMessage)) {
+                if (!detectedSessionMode) {
+                  detectedSessionMode = inferSessionModeFromUserMessage(cleanedUserMessage);
+                }
+                lastUserMessage = cleanedUserMessage;
+              }
             }
           }
 
@@ -2843,6 +3465,7 @@ async function parseCodexSessionFile(filePath) {
       return {
         ...sessionMeta,
         timestamp: lastTimestamp || sessionMeta.timestamp,
+        mode: detectedSessionMode || 'research',
         summary: lastUserMessage ?
           (lastUserMessage.length > 50 ? lastUserMessage.substring(0, 50) + '...' : lastUserMessage) :
           'Codex Session',
@@ -3103,7 +3726,9 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
 
 async function deleteCodexSession(sessionId) {
   try {
+    const { sessionDb } = await import('./database/db.js');
     const codexSessionsDir = path.join(os.homedir(), '.codex', 'sessions');
+    const indexedSession = sessionDb.getSessionById(sessionId);
 
     const findJsonlFiles = async (dir) => {
       const files = [];
@@ -3122,13 +3747,26 @@ async function deleteCodexSession(sessionId) {
     };
 
     const jsonlFiles = await findJsonlFiles(codexSessionsDir);
+    let deletedFile = false;
 
     for (const filePath of jsonlFiles) {
       const sessionData = await parseCodexSessionFile(filePath);
       if (sessionData && sessionData.id === sessionId) {
         await fs.unlink(filePath);
-        return true;
+        deletedFile = true;
+        break;
       }
+    }
+
+    const deletedIndex =
+      indexedSession?.provider === 'codex' || deletedFile;
+
+    if (deletedIndex) {
+      sessionDb.deleteSession(sessionId);
+    }
+
+    if (deletedFile || deletedIndex) {
+      return true;
     }
 
     throw new Error(`Codex session file not found for session ${sessionId}`);
@@ -3193,10 +3831,7 @@ async function renameSession(projectName, sessionId, newSummary, provider = 'cla
       await fs.appendFile(geminiSessionFile, JSON.stringify(summaryEntry) + '\n');
 
       // Also update Dr. Claw's own index (source of truth)
-      const existing = sessionDb.getSessionById(sessionId);
-      sessionDb.upsertSession(sessionId, projectName, provider, trimmedSummary, new Date().toISOString(), 0, {
-        sessionMode: extractSessionModeFromMetadata(existing?.metadata),
-      });
+      sessionDb.updateSessionName(sessionId, trimmedSummary);
 
       console.log(`[Gemini] Renamed session ${sessionId} to "${trimmedSummary}"`);
       return true;
@@ -3229,10 +3864,7 @@ async function renameSession(projectName, sessionId, newSummary, provider = 'cla
       await db.close();
 
       // Update Dr. Claw's own index
-      const existing = sessionDb.getSessionById(sessionId);
-      sessionDb.upsertSession(sessionId, projectName, provider, trimmedSummary, new Date().toISOString(), 0, {
-        sessionMode: extractSessionModeFromMetadata(existing?.metadata),
-      });
+      sessionDb.updateSessionName(sessionId, trimmedSummary);
 
       console.log(`[Cursor] Renamed session ${sessionId} to "${trimmedSummary}"`);
       return true;
@@ -3287,10 +3919,7 @@ async function renameSession(projectName, sessionId, newSummary, provider = 'cla
           await fs.appendFile(jsonlFile, JSON.stringify(summaryEntry) + '\n');
 
           // Update Dr. Claw's own index
-          const existing = sessionDb.getSessionById(sessionId);
-          sessionDb.upsertSession(sessionId, projectName, provider, trimmedSummary, new Date().toISOString(), 0, {
-            sessionMode: extractSessionModeFromMetadata(existing?.metadata),
-          });
+          sessionDb.updateSessionName(sessionId, trimmedSummary);
 
           console.log(`[Claude] Renamed session ${sessionId} to "${trimmedSummary}"`);
           return true;
@@ -3327,6 +3956,11 @@ export {
   getGeminiSessions,
   getCodexSessionMessages,
   deleteCodexSession,
+  reconcileClaudeSessionIndex,
+  reconcileCodexSessionIndex,
+  reconcileGeminiSessionIndex,
+  reconcileOpenRouterSessionIndex,
+  reconcileLocalGPUSessionIndex,
   ensureProjectSkillLinks,
   getWorkspaceRootFromConfig,
   setWorkspaceRootInConfig

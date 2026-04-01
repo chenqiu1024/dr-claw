@@ -1,4 +1,8 @@
 {
+  "status": {
+    "thinking": "생각 중...",
+    "runningCode": "코드 실행 중"
+  },
   "codeBlock": {
     "copy": "복사",
     "copied": "복사됨",
@@ -12,6 +16,10 @@
     "cursor": "Cursor",
     "codex": "Codex",
     "gemini": "Gemini"
+  },
+  "error": {
+    "retry": "재시도",
+    "usageLimitHint": "사용량 제한이 재설정되면 재시도할 수 있습니다"
   },
   "tools": {
     "settings": "도구 설정",
@@ -87,6 +95,10 @@
   "usageLimit": {
     "resetAt": "Claude 사용량 한도에 도달했습니다. 한도는 **{{time}} {{timezone}}** - {{date}}에 초기화됩니다"
   },
+  "tokenUsage": {
+    "unavailable": "컨텍스트 N/A",
+    "unavailableTitle": "이 세션의 현재 컨텍스트 사용량을 확인할 수 없습니다."
+  },
   "codex": {
     "permissionMode": "권한 모드",
     "modes": {
@@ -108,8 +120,10 @@
     "placeholderDefault": "메시지를 입력하세요...",
     "disabled": "입력 비활성화",
     "attachFiles": "파일 첨부",
+    "attachReferences": "참고문헌 첨부",
     "attachImages": "이미지 첨부",
     "dropFilesHere": "파일을 여기에 놓으세요",
+    "attachmentOnlyFallback": "첨부한 파일을 먼저 확인하고, 그 파일을 바탕으로 도와주세요.",
     "send": "전송",
     "stop": "중지",
     "hintText": {
@@ -157,6 +171,98 @@
     },
     "buttonTitle": "Thinking 모드: {{mode}}"
   },
+  "codexReasoningEffort": {
+    "selector": {
+      "title": "추론 강도",
+      "description": "Codex가 응답 전에 얼마나 신중하게 추론할지 제어합니다",
+      "active": "활성",
+      "tip": "높은 추론 강도는 어려운 작업의 품질을 높이는 대신 응답 시간이 더 길어질 수 있습니다"
+    },
+    "levels": {
+      "default": {
+        "name": "기본값",
+        "description": "모델 기본 추론 강도 사용"
+      },
+      "minimal": {
+        "name": "최소",
+        "description": "가장 빠른 응답, 최소한의 신중한 추론"
+      },
+      "low": {
+        "name": "낮음",
+        "description": "가벼운 추론, 더 낮은 지연 시간"
+      },
+      "medium": {
+        "name": "보통",
+        "description": "깊이와 지연 시간의 균형"
+      },
+      "high": {
+        "name": "높음",
+        "description": "어려운 작업에 더 신중한 추론"
+      },
+      "xhigh": {
+        "name": "최대",
+        "description": "최대 추론 강도"
+      }
+    },
+    "buttonTitle": "추론 강도: {{level}}"
+  },
+  "geminiThinking": {
+    "selector": {
+      "title": "Thinking 강도",
+      "descriptionGemini3": "Gemini 3 모델은 공식 thinking level을 사용합니다",
+      "descriptionGemini25": "Gemini 2.5 모델은 고정 thinking budget 프리셋을 사용합니다",
+      "active": "활성",
+      "tipGemini3": "Gemini 3는 공식 thinking level을 사용합니다. 높은 수준은 보통 추론 깊이를 높이지만 지연 시간도 늘립니다.",
+      "tipGemini25": "Gemini 2.5는 token budget을 사용합니다. 높은 예산은 최종 답변 전에 더 많은 추론 토큰을 허용합니다."
+    },
+    "modes": {
+      "default": {
+        "name": "기본값",
+        "description": "이 모델의 Gemini CLI 기본 동작 사용"
+      },
+      "minimal": {
+        "name": "최소",
+        "description": "가장 낮은 공식 thinking level"
+      },
+      "low": {
+        "name": "낮음",
+        "description": "가벼운 추론과 더 낮은 지연 시간"
+      },
+      "medium": {
+        "name": "보통",
+        "description": "추론 깊이와 지연 시간의 균형"
+      },
+      "high": {
+        "name": "높음",
+        "description": "가장 높은 공식 thinking level"
+      },
+      "dynamic": {
+        "name": "동적",
+        "description": "모델이 thinking budget을 동적으로 조정하도록 둡니다"
+      },
+      "off": {
+        "name": "끔",
+        "description": "thinking 비활성화"
+      },
+      "light": {
+        "name": "가볍게",
+        "description": "작은 고정 thinking budget 사용 ({{budget}} tokens)"
+      },
+      "balanced": {
+        "name": "균형",
+        "description": "중간 thinking budget 사용 ({{budget}} tokens)"
+      },
+      "deep": {
+        "name": "깊게",
+        "description": "큰 thinking budget 사용 ({{budget}} tokens)"
+      },
+      "max": {
+        "name": "최대",
+        "description": "이 모델이 지원하는 최대 thinking budget 사용 ({{budget}} tokens)"
+      }
+    },
+    "buttonTitle": "Thinking 강도: {{mode}}"
+  },
   "providerSelection": {
     "title": "AI 어시스턴트 선택",
     "description": "새 대화를 시작할 프로바이더를 선택하세요",
@@ -168,26 +274,33 @@
       "anthropic": "by Anthropic",
       "openai": "by OpenAI",
       "google": "by Google",
-      "cursorEditor": "AI 코드 에디터"
+      "cursorEditor": "AI 코드 에디터",
+      "openrouter": "API를 통한 모든 모델",
+      "local": "로컬 GPU에서 실행"
     },
     "readyPrompt": {
       "claude": "{{model}}로 Claude를 사용할 준비가 되었습니다. 아래에 메시지를 입력하세요.",
       "cursor": "{{model}}로 Cursor를 사용할 준비가 되었습니다. 아래에 메시지를 입력하세요.",
       "gemini": "{{model}}로 Gemini를 사용할 준비가 되었습니다. 아래에 메시지를 입력하세요.",
       "codex": "{{model}}로 Codex를 사용할 준비가 되었습니다. 아래에 메시지를 입력하세요.",
+      "openrouter": "{{model}}로 OpenRouter를 사용할 준비가 되었습니다. 아래에 메시지를 입력하세요.",
+      "local": "{{model}}로 로컬 GPU를 사용할 준비가 되었습니다. 아래에 메시지를 입력하세요.",
       "default": "시작하려면 위에서 프로바이더를 선택하세요"
     }
   },
   "session": {
     "mode": {
       "title": "세션 유형 선택",
+      "badge_one": "{{count}}개 모드",
+      "badge_other": "{{count}}개 모드",
       "subtitle": "이 세션을 연구 워크플로우용으로 쓸지, 워크스페이스 질문 전용으로 둘지 결정하세요.",
       "research": "연구",
       "workspaceQa": "파일 Q&A",
-      "researchTitle": "Research Session",
+      "researchTitle": "연구 세션",
       "researchDescription": "연구 워크플로우, 온보딩 프롬프트, 파이프라인 가이드를 사용합니다.",
-      "workspaceQaTitle": "Workspace Q&A",
+      "workspaceQaTitle": "워크스페이스 Q&A",
       "workspaceQaDescription": "연구 워크플로우를 건드리지 않고 파일, 모듈, 구현 세부사항만 질문합니다.",
+      "workspaceQaGreeting": "이 워크스페이스의 파일, 모듈, 구현 세부사항에 대해 무엇이든 물어보세요. 명시적으로 연구 계획 시작을 요청하지 않는 한 저는 코드와 프로젝트 구조에만 집중합니다.",
       "workspaceQaHint": "명시적으로 연구 계획을 요청하지 않는 한 이 세션은 저장소 질문에만 집중합니다."
     },
     "continue": {
@@ -207,6 +320,54 @@
       "loadingAll": "모든 메시지 로딩 중...",
       "allLoaded": "모든 메시지 로드 완료",
       "perfWarning": "모든 메시지가 로드됨 - 스크롤이 느려질 수 있습니다. \"맨 아래로 스크롤\"을 클릭하면 성능이 복구됩니다."
+    }
+  },
+  "sessionContext": {
+    "title": "세션 컨텍스트",
+    "description": "이 세션 추적에서 실제로 관측된 파일, 작업, 출력물을 보여줍니다.",
+    "codexNotice": "Codex 가시성은 현재 런타임이 노출하는 도구 이벤트 범위에 따라 부분적으로만 제공됩니다.",
+    "traceError": "전체 세션 추적을 불러오지 못했습니다. 현재는 메모리 내 실시간 메시지만 표시합니다.",
+    "stats": {
+      "mode": "모드",
+      "provider": "프로바이더",
+      "contextFiles": "컨텍스트 파일",
+      "unreadOutputs": "읽지 않은 출력"
+    },
+    "sections": {
+      "injectedContext": "주입된 컨텍스트",
+      "taskContext": "작업 컨텍스트",
+      "reviewQueue": "검토 대기열",
+      "fileReview": "파일 검토"
+    },
+    "actions": {
+      "collapse": "컨텍스트 사이드바 접기",
+      "expand": "컨텍스트 사이드바 펼치기",
+      "resize": "드래그하여 너비 조절"
+    },
+    "filters": {
+      "all": "전체",
+      "unread": "읽지 않음",
+      "reviewed": "검토됨"
+    },
+    "kinds": {
+      "task": "작업",
+      "todo": "Todo",
+      "skill": "스킬",
+      "directory": "디렉터리"
+    },
+    "empty": {
+      "injectedContext": "아직 파일 또는 디렉터리 컨텍스트가 관측되지 않았습니다.",
+      "taskContext": "아직 작업 또는 Todo 컨텍스트가 수집되지 않았습니다.",
+      "reviewQueue": "이 세션에서 생성된 파일이 아직 없습니다."
+    },
+    "preview": {
+      "titleFallback": "미리보기",
+      "selectFile": "미리볼 파일을 선택하세요",
+      "open": "열기",
+      "loading": "미리보기 로딩 중...",
+      "loadError": "미리보기를 불러오지 못했습니다. {{error}}",
+      "selectToReview": "검토할 파일을 선택하세요",
+      "unreadHint": "출력 파일은 검토 대기열에서 열기 전까지 읽지 않음 상태로 유지됩니다."
     }
   },
   "shell": {
@@ -234,7 +395,17 @@
     "runCommand": "{{projectName}}에서 {{command}} 실행",
     "openTerminal": "{{projectName}}에서 터미널 열기",
     "startCli": "{{projectName}}에서 Claude CLI 시작",
+    "historyEdit": {
+      "action": "대화 기록 수정",
+      "promptTitle": "기록 수정은 Shell에서 진행하세요",
+      "promptDescription": "Web Chat은 대화 기록을 직접 수정하지 않습니다. 모델의 원래 편집, 되돌리기, 재시도 흐름은 Shell에서 사용하세요.",
+      "cancel": "취소",
+      "confirm": "Shell로 이동",
+      "bannerTitle": "현재 세션이 Shell에 연결되었습니다",
+      "bannerDescription": "모델의 원래 기록 수정, 되돌리기, 재시도 흐름은 여기서 사용하세요. Web Chat은 대화를 표시만 하고 기록을 직접 수정하지 않습니다."
+    },
     "workspace": {
+      "currentSession": "현재 세션",
       "newShell": "새 Shell",
       "tabTitle": "Shell {{index}}",
       "closeShell": "{{title}} 닫기"
@@ -324,6 +495,10 @@
         "title": "원고 리뷰",
         "description": "리뷰어 관점에서 방법, 근거, 인용, 문장 품질을 점검합니다."
       },
+      "rebuttalResponse": {
+        "title": "리뷰 응답 작성",
+        "description": "학회별 전략, 안전 검증, 이슈 추적을 활용하여 심사 의견에 전문적으로 응답합니다."
+      },
       "grantProposal": {
         "title": "연구비 제안서",
         "description": "NSF, NIH, DOE, DARPA, NASA 또는 NSFC 대상 연구비 제안서를 기획, 초안 작성, 수정, 재제출합니다."
@@ -333,6 +508,11 @@
         "description": "논문 내용을 바탕으로 슬라이드, 내레이션 스크립트, TTS 오디오, 데모 영상을 만듭니다."
       }
     }
+  },
+  "attachedPrompt": {
+    "showPrompt": "프롬프트 보기",
+    "hidePrompt": "프롬프트 숨기기",
+    "remove": "제거"
   },
   "pipelineOnboarding": {
     "noBrief": {

@@ -21,6 +21,7 @@ import enSidebar from './locales/en/sidebar.json';
 import enChat from './locales/en/chat.json';
 import enCodeEditor from './locales/en/codeEditor.json';
 import enNews from './locales/en/news.json';
+import enReferences from './locales/en/references.json';
 
 import koCommon from './locales/ko/common.json';
 import koSettings from './locales/ko/settings.json';
@@ -29,6 +30,7 @@ import koSidebar from './locales/ko/sidebar.json';
 import koChat from './locales/ko/chat.json';
 import koCodeEditor from './locales/ko/codeEditor.json';
 import koNews from './locales/ko/news.json';
+import koReferences from './locales/ko/references.json';
 
 import zhCommon from './locales/zh-CN/common.json';
 import zhSettings from './locales/zh-CN/settings.json';
@@ -37,6 +39,7 @@ import zhSidebar from './locales/zh-CN/sidebar.json';
 import zhChat from './locales/zh-CN/chat.json';
 import zhCodeEditor from './locales/zh-CN/codeEditor.json';
 import zhNews from './locales/zh-CN/news.json';
+import zhReferences from './locales/zh-CN/references.json';
 
 // Import supported languages configuration
 import { languages } from './languages.js';
@@ -70,6 +73,7 @@ i18n
         chat: enChat,
         codeEditor: enCodeEditor,
         news: enNews,
+        references: enReferences,
       },
       ko: {
         common: koCommon,
@@ -79,6 +83,7 @@ i18n
         chat: koChat,
         codeEditor: koCodeEditor,
         news: koNews,
+        references: koReferences,
       },
       'zh-CN': {
         common: zhCommon,
@@ -88,6 +93,7 @@ i18n
         chat: zhChat,
         codeEditor: zhCodeEditor,
         news: zhNews,
+        references: zhReferences,
       },
     },
 
@@ -101,7 +107,7 @@ i18n
     debug: import.meta.env.DEV,
 
     // Namespaces - load only what's needed
-    ns: ['common', 'settings', 'auth', 'sidebar', 'chat', 'codeEditor', 'news'],
+    ns: ['common', 'settings', 'auth', 'sidebar', 'chat', 'codeEditor', 'news', 'references'],
     defaultNS: 'common',
 
     // Key separator for nested keys (default: '.')

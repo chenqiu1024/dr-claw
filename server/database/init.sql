@@ -68,6 +68,37 @@ CREATE TABLE IF NOT EXISTS session_metadata (
 CREATE INDEX IF NOT EXISTS idx_session_metadata_project ON session_metadata(project_name);
 CREATE INDEX IF NOT EXISTS idx_session_metadata_provider ON session_metadata(provider);
 
+CREATE TABLE IF NOT EXISTS project_tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_name TEXT NOT NULL,
+    tag_key TEXT NOT NULL,
+    tag_type TEXT NOT NULL,
+    label TEXT NOT NULL,
+    color TEXT,
+    sort_order INTEGER DEFAULT 0,
+    metadata TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_name, tag_type, tag_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_tags_project ON project_tags(project_name);
+CREATE INDEX IF NOT EXISTS idx_project_tags_type ON project_tags(tag_type);
+
+CREATE TABLE IF NOT EXISTS session_tag_links (
+    session_id TEXT NOT NULL,
+    tag_id INTEGER NOT NULL,
+    linked_by TEXT,
+    source TEXT,
+    metadata TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(session_id, tag_id),
+    FOREIGN KEY (session_id) REFERENCES session_metadata(id) ON DELETE CASCADE,
+    FOREIGN KEY (tag_id) REFERENCES project_tags(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_tag_links_session ON session_tag_links(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_tag_links_tag ON session_tag_links(tag_id);
+
 -- Projects table for unified management across all providers
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
@@ -112,3 +143,52 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- References (literature) cache table
+CREATE TABLE IF NOT EXISTS references_library (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    authors TEXT,
+    year INTEGER,
+    abstract TEXT,
+    doi TEXT,
+    url TEXT,
+    journal TEXT,
+    item_type TEXT DEFAULT 'article',
+    source TEXT DEFAULT 'zotero',
+    source_id TEXT,
+    keywords TEXT,
+    citation_key TEXT,
+    pdf_cached INTEGER DEFAULT 0,
+    raw_data TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_references_user ON references_library(user_id);
+CREATE INDEX IF NOT EXISTS idx_references_source_id ON references_library(source_id);
+CREATE INDEX IF NOT EXISTS idx_references_doi ON references_library(doi);
+
+-- Reference ↔ Project many-to-many
+CREATE TABLE IF NOT EXISTS project_references (
+    project_id TEXT NOT NULL,
+    reference_id TEXT NOT NULL,
+    added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, reference_id),
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY (reference_id) REFERENCES references_library(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_references_project ON project_references(project_id);
+
+-- Reference tags
+CREATE TABLE IF NOT EXISTS reference_tags (
+    reference_id TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    UNIQUE(reference_id, tag),
+    FOREIGN KEY (reference_id) REFERENCES references_library(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_reference_tags_ref ON reference_tags(reference_id);

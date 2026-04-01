@@ -1,6 +1,10 @@
 ---
 name: inno-figure-gen
-description: Generate/edit images with Gemini image models (default: gemini-3.1-flash-image-preview). Use for image create/modify requests incl. edits. Supports text-to-image + image-to-image; 1K/2K/4K; use --input-image. Use --model to select a different model.
+description: >
+  Generate/edit images with Gemini image models (default:
+  gemini-3.1-flash-image-preview). Use for image create/modify requests incl.
+  edits. Supports text-to-image + image-to-image; 1K/2K/4K; use --input-image.
+  Use --model to select a different model.
 ---
 
 # Gemini Image Generation & Editing
@@ -9,16 +13,21 @@ Generate new images or edit existing ones using Google's Gemini image generation
 
 ## Usage
 
-Run the script using absolute path (do NOT cd to skill directory first):
+The script is at `scripts/generate_image.py` **relative to this skill's directory** (the directory containing this `SKILL.md`). Resolve the full path from the skill's location before running. Do not hardcode `~/.codex/...`, because the skill may be installed in a different location.
+
+Keep the distinction clear:
+- The **script path** tells you where to find `generate_image.py`.
+- The **output path** is controlled by the current working directory plus `--filename`.
+- Run from the user's working directory so relative filenames save output there, not in the skill directory.
 
 **Generate new image:**
 ```bash
-uv run ~/.codex/skills/inno-figure-gen/scripts/generate_image.py --prompt "your image description" --filename "output-name.png" [--resolution 1K|2K|4K] [--model MODEL] [--api-key KEY]
+uv run <this-skill-directory>/scripts/generate_image.py --prompt "your image description" --filename "output-name.png" [--resolution 1K|2K|4K] [--model MODEL] [--api-key KEY]
 ```
 
 **Edit existing image:**
 ```bash
-uv run ~/.codex/skills/inno-figure-gen/scripts/generate_image.py --prompt "editing instructions" --filename "output-name.png" --input-image "path/to/input.png" [--resolution 1K|2K|4K] [--model MODEL] [--api-key KEY]
+uv run <this-skill-directory>/scripts/generate_image.py --prompt "editing instructions" --filename "output-name.png" --input-image "path/to/input.png" [--resolution 1K|2K|4K] [--model MODEL] [--api-key KEY]
 ```
 
 **Important:** Always run from the user's current working directory so images are saved where the user is working, not in the skill directory.
@@ -28,11 +37,11 @@ uv run ~/.codex/skills/inno-figure-gen/scripts/generate_image.py --prompt "editi
 Goal: fast iteration without burning time on 4K until the prompt is correct.
 
 - Draft (1K): quick feedback loop
-  - `uv run ~/.codex/skills/inno-figure-gen/scripts/generate_image.py --prompt "<draft prompt>" --filename "yyyy-mm-dd-hh-mm-ss-draft.png" --resolution 1K`
+  - `uv run <this-skill-directory>/scripts/generate_image.py --prompt "<draft prompt>" --filename "yyyy-mm-dd-hh-mm-ss-draft.png" --resolution 1K`
 - Iterate: adjust prompt in small diffs; keep filename new per run
   - If editing: keep the same `--input-image` for every iteration until you’re happy.
 - Final (4K): only when prompt is locked
-  - `uv run ~/.codex/skills/inno-figure-gen/scripts/generate_image.py --prompt "<final prompt>" --filename "yyyy-mm-dd-hh-mm-ss-final.png" --resolution 4K`
+  - `uv run <this-skill-directory>/scripts/generate_image.py --prompt "<final prompt>" --filename "yyyy-mm-dd-hh-mm-ss-final.png" --resolution 4K`
 
 ## Resolution Options
 
@@ -53,7 +62,7 @@ Map user requests to API parameters:
 The default model is `gemini-3.1-flash-image-preview`. You can override it with the `--model` flag:
 
 ```bash
-uv run ~/.codex/skills/inno-figure-gen/scripts/generate_image.py --prompt "..." --filename "..." --model gemini-3.1-flash-image-preview
+uv run <this-skill-directory>/scripts/generate_image.py --prompt "..." --filename "..." --model gemini-3.1-flash-image-preview
 ```
 
 Available models depend on your Gemini API access. Common options:
@@ -133,10 +142,10 @@ Use templates when the user is vague or when edits must be precise.
 
 **Generate new image:**
 ```bash
-uv run ~/.codex/skills/inno-figure-gen/scripts/generate_image.py --prompt "A serene Japanese garden with cherry blossoms" --filename "2025-11-23-14-23-05-japanese-garden.png" --resolution 4K
+uv run <this-skill-directory>/scripts/generate_image.py --prompt "A serene Japanese garden with cherry blossoms" --filename "2025-11-23-14-23-05-japanese-garden.png" --resolution 4K
 ```
 
 **Edit existing image:**
 ```bash
-uv run ~/.codex/skills/inno-figure-gen/scripts/generate_image.py --prompt "make the sky more dramatic with storm clouds" --filename "2025-11-23-14-25-30-dramatic-sky.png" --input-image "original-photo.jpg" --resolution 2K
+uv run <this-skill-directory>/scripts/generate_image.py --prompt "make the sky more dramatic with storm clouds" --filename "2025-11-23-14-25-30-dramatic-sky.png" --input-image "original-photo.jpg" --resolution 2K
 ```

@@ -1,13 +1,16 @@
 import { SessionProvider } from '../../../../types/app';
 import SessionProviderLogo from '../../../SessionProviderLogo';
-import type { Provider } from '../../types/types';
+import { useTranslation } from 'react-i18next';
+import { getProviderDisplayName } from '../../utils/chatFormatting';
 
 type AssistantThinkingIndicatorProps = {
   selectedProvider: SessionProvider;
+  statusText?: string | null;
 }
 
 
-export default function AssistantThinkingIndicator({ selectedProvider }: AssistantThinkingIndicatorProps) {
+export default function AssistantThinkingIndicator({ selectedProvider, statusText }: AssistantThinkingIndicatorProps) {
+  const { t } = useTranslation('chat');
   return (
     <div className="chat-message assistant flex flex-col w-full px-4 sm:px-6">
       <div className="flex flex-col w-full mb-6">
@@ -16,7 +19,7 @@ export default function AssistantThinkingIndicator({ selectedProvider }: Assista
             <SessionProviderLogo provider={selectedProvider} className="w-full h-full" />
           </div>
           <div className="text-xs font-semibold text-gray-900 dark:text-white">
-            {selectedProvider === 'cursor' ? 'Cursor' : selectedProvider === 'codex' ? 'Codex' : selectedProvider === 'gemini' ? 'Gemini' : 'Claude'}
+            {getProviderDisplayName(selectedProvider)}
           </div>
         </div>
         <div className="w-full text-sm text-gray-500 dark:text-gray-400">
@@ -28,7 +31,7 @@ export default function AssistantThinkingIndicator({ selectedProvider }: Assista
             <div className="animate-pulse" style={{ animationDelay: '0.4s' }}>
               .
             </div>
-            <span className="ml-2 text-xs">Thinking...</span>
+            <span className="ml-2 text-xs">{statusText || t('status.thinking')}</span>
           </div>
         </div>
       </div>

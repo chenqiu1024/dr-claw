@@ -15,6 +15,7 @@
     "inno-humanizer": { "zh": "阶段: 论文撰写", "en": "Stage: Paper Writing", "ko": "단계: 논문 작성" },
     "inno-grant-proposal": { "zh": "阶段: 基金撰写", "en": "Stage: Grant Writing", "ko": "단계: 연구비 작성" },
     "inno-rclone-to-overleaf": { "zh": "阶段: 发布同步", "en": "Stage: Publication Sync", "ko": "단계: 배포 동기화" },
+    "inno-rebuttal": { "zh": "阶段: 论文评审", "en": "Stage: Paper Review", "ko": "단계: 논문 심사" },
     "making-academic-presentations": { "zh": "阶段: 成果推广", "en": "Stage: Promotion", "ko": "단계: 성과 홍보" },
     "inno-figure-gen": { "zh": "阶段: 论文撰写", "en": "Stage: Paper Writing", "ko": "단계: 논문 작성" },
     "bioinformatics-init-analysis": { "zh": "阶段: 实验分析", "en": "Stage: Analysis", "ko": "단계: 분석" },
@@ -238,6 +239,7 @@
     "inno-paper-writing",
     "inno-prepare-resources",
     "inno-rclone-to-overleaf",
+    "inno-rebuttal",
     "inno-reference-audit"
   ],
   "domainCsAiExceptions": [

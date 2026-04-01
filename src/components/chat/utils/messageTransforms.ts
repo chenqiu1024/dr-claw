@@ -1,5 +1,9 @@
 import type { ChatMessage } from '../types/types';
-import { decodeHtmlEntities, unescapeWithMathProtection } from './chatFormatting';
+import {
+  buildAssistantMessages,
+  decodeHtmlEntities,
+  unescapeWithMathProtection,
+} from './chatFormatting';
 import { stripInternalContextPrefix } from '../../../utils/sessionFormatting';
 
 export interface DiffLine {
@@ -427,7 +431,7 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
     let content = getContent(message);
 
     if (role === 'user' && content) {
-      let text = '';
+      let rawText = '';
       if (Array.isArray(content)) {
         const textParts: string[] = [];
         content.forEach((part: any) => {
@@ -435,70 +439,76 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
             textParts.push(decodeHtmlEntities(part.text));
           }
         });
-        text = textParts.join('\n');
+        rawText = textParts.join('\n');
       } else if (typeof content === 'string') {
-        text = decodeHtmlEntities(content);
+        rawText = decodeHtmlEntities(content);
       } else {
-        text = decodeHtmlEntities(String(content));
+        rawText = decodeHtmlEntities(String(content));
       }
-      text = stripInternalContextPrefix(text) || '';
+      const text = stripInternalContextPrefix(rawText, false) || '';
 
       // Check if this user message also contains tool_result parts
       const hasToolResults = Array.isArray(content) &&
         content.some((part: any) => part.type === 'tool_result');
 
       const shouldSkip =
-        !text ||
-        text.startsWith('<system-reminder>') ||
-        text.startsWith('Caveat:') ||
-        text.startsWith('This session is being continued from a previous') ||
-        text.startsWith('[Request interrupted');
+        !rawText.trim() ||
+        rawText.startsWith('<system-reminder>') || text.startsWith('<system-reminder>') ||
+        rawText.startsWith('Caveat:') || text.startsWith('Caveat:') ||
+        rawText.startsWith('This session is being continued from a previous') || text.startsWith('This session is being continued from a previous') ||
+        rawText.startsWith('[Request interrupted') || text.startsWith('[Request interrupted');
 
       if (shouldSkip) {
         return;
       }
 
       // Detect skill/command content
-      const isSkillRelated =
-        text.startsWith('<command-name>') ||
-        text.startsWith('<command-message>') ||
-        text.startsWith('<command-args>') ||
-        text.startsWith('<local-command-stdout>') ||
-        text.includes('Base directory for this skill:') ||
-        (hasToolResults && !text.startsWith('<system-reminder>'));
+      const isSkillRelated = rawText.includes('Base directory for this skill:');
+
+      const visibleText = isSkillRelated ? (text || rawText.trim()) : text;
 
       // Parse <task-notification> blocks
-      const taskNotifRegex = /<task-notification>\s*<task-id>[^<]*<\/task-id>\s*<output-file>[^<]*<\/output-file>\s*<status>([^<]*)<\/status>\s*<summary>([^<]*)<\/summary>\s*<\/task-notification>/g;
-      const taskNotifMatch = taskNotifRegex.exec(text);
+      const taskNotifRegex = /<task-notification>\s*<task-id>([^<]*)<\/task-id>\s*<output-file>([^<]*)<\/output-file>\s*<status>([^<]*)<\/status>\s*<summary>([^<]*)<\/summary>\s*<\/task-notification>/g;
+      const taskNotifMatch = taskNotifRegex.exec(rawText);
       if (taskNotifMatch) {
-        const status = taskNotifMatch[1]?.trim() || 'completed';
-        const summary = taskNotifMatch[2]?.trim() || 'Background task finished';
+        const taskId = taskNotifMatch[1]?.trim() || null;
+        const outputFile = taskNotifMatch[2]?.trim() || null;
+        const status = taskNotifMatch[3]?.trim() || 'completed';
+        const summary = taskNotifMatch[4]?.trim() || 'Background task finished';
         converted.push({
           type: 'assistant',
           content: summary,
           timestamp: message.timestamp || new Date().toISOString(),
           isTaskNotification: true,
           taskStatus: status,
+          taskId,
+          taskOutputFile: outputFile,
         });
       } else if (isSkillRelated) {
+        if (!visibleText) {
+          return;
+        }
         const last = converted[converted.length - 1];
-        if (last?.type === 'user' && String(last.content || '') === unescapeWithMathProtection(text)) {
+        if (last?.type === 'user' && String(last.content || '') === unescapeWithMathProtection(visibleText)) {
           return;
         }
         converted.push({
           type: 'user',
-          content: unescapeWithMathProtection(text),
+          content: unescapeWithMathProtection(visibleText),
           timestamp: message.timestamp || new Date().toISOString(),
           isSkillContent: true,
         });
       } else {
+        if (!visibleText) {
+          return;
+        }
         const last = converted[converted.length - 1];
-        if (last?.type === 'user' && String(last.content || '') === unescapeWithMathProtection(text)) {
+        if (last?.type === 'user' && String(last.content || '') === unescapeWithMathProtection(visibleText)) {
           return;
         }
         converted.push({
           type: 'user',
-          content: unescapeWithMathProtection(text),
+          content: unescapeWithMathProtection(visibleText),
           timestamp: message.timestamp || new Date().toISOString(),
         });
       }
@@ -624,11 +634,8 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
             if (typeof text === 'string') {
               text = unescapeWithMathProtection(text);
             }
-            converted.push({
-              type: 'assistant',
-              content: text,
-              timestamp: message.timestamp || new Date().toISOString(),
-            });
+            const ts = message.timestamp || new Date().toISOString();
+            converted.push(...buildAssistantMessages(typeof text === 'string' ? text : String(text), ts));
             return;
           }
 
@@ -695,11 +702,9 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
       }
 
       if (typeof content === 'string') {
-        converted.push({
-          type: 'assistant',
-          content: unescapeWithMathProtection(content),
-          timestamp: message.timestamp || new Date().toISOString(),
-        });
+        const normalizedContent = unescapeWithMathProtection(content);
+        const ts = message.timestamp || new Date().toISOString();
+        converted.push(...buildAssistantMessages(normalizedContent, ts));
       }
     }
   });

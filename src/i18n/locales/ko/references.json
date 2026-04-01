@@ -1,0 +1,83 @@
+{
+  "panel": {
+    "title": "참고문헌 라이브러리",
+    "import": "가져오기",
+    "loading": "참고문헌 로드 중...",
+    "noProjectRefs": "이 프로젝트에 연결된 참고문헌이 없습니다. Zotero에서 동기화하거나 BibTeX 파일을 업로드한 후 여기에 연결하세요.",
+    "noRefs": "참고문헌을 찾을 수 없습니다. Zotero에서 가져오거나 BibTeX 파일을 업로드하세요.",
+    "showAllRefs": "전체 참고문헌 보기 ({{count}})",
+    "hideAllRefs": "전체 참고문헌 숨기기",
+    "addFromLibrary": "라이브러리에서 추가 ({{count}})",
+    "hideLibrary": "라이브러리 숨기기"
+  },
+  "search": {
+    "placeholder": "제목, 저자, 저널로 검색..."
+  },
+  "detail": {
+    "abstract": "초록",
+    "keywords": "키워드",
+    "viewSource": "원본 보기"
+  },
+  "import": {
+    "title": "참고문헌 가져오기",
+    "description": "Zotero에서 동기화하거나 BibTeX 파일을 업로드하여 이 프로젝트에 참고문헌을 추가합니다.",
+    "zoteroSync": "Zotero 동기화",
+    "zoteroConnected": "Zotero 연결됨",
+    "zoteroNotConnected": "Zotero를 사용할 수 없습니다. Zotero 데스크톱 앱을 시작하세요.",
+    "zoteroApiDisabled": "Zotero가 실행 중이지만 로컬 API가 비활성화되어 있습니다. Zotero → 설정 → 고급 → 다른 애플리케이션이 Zotero와 통신하도록 허용에서 활성화하세요.",
+    "zoteroNotRunning": "Zotero 데스크톱이 실행되지 않고 있습니다. Zotero 앱을 시작한 후 다시 시도하세요.",
+    "zoteroChecking": "Zotero 연결 확인 중...",
+    "syncButton": "지금 동기화",
+    "syncSuccess": "Zotero에서 {{count}}개의 참고문헌을 동기화했습니다",
+    "bibtexImport": "BibTeX 가져오기",
+    "bibtexDescription": ".bib 파일을 업로드하여 참고문헌을 가져옵니다.",
+    "dropBibtex": ".bib 파일을 여기에 드롭하거나 클릭하여 찾아보기",
+    "browseFile": "파일 찾아보기",
+    "importSuccess": "{{count}}개의 참고문헌을 가져왔습니다",
+    "invalidFileType": ".bib 및 .bibtex 파일만 지원됩니다."
+  },
+  "browser": {
+    "title": "Zotero 라이브러리 탐색",
+    "myLibrary": "내 라이브러리 (전체)",
+    "loadingCollections": "컬렉션 로드 중...",
+    "loadingItems": "항목 로드 중...",
+    "noCollections": "컬렉션을 찾을 수 없습니다",
+    "noItems": "이 컬렉션에 항목이 없습니다",
+    "selectAll": "전체 선택",
+    "deselectAll": "전체 해제",
+    "importSelected": "선택 항목 가져오기 ({{count}})",
+    "importingItems": "가져오는 중...",
+    "importSuccess": "{{count}}개의 참고문헌을 가져왔습니다",
+    "back": "뒤로",
+    "browseAndSelect": "탐색 및 선택"
+  },
+  "picker": {
+    "title": "메시지에 참고문헌 추가",
+    "searchPlaceholder": "참고문헌 검색...",
+    "loading": "로드 중...",
+    "noResults": "참고문헌을 찾을 수 없습니다",
+    "projectRef": "프로젝트",
+    "selectedCount": "{{count}}개 선택됨",
+    "addToMessage": "메시지에 추가"
+  },
+  "actions": {
+    "linkToProject": "프로젝트에 연결",
+    "unlinkFromProject": "프로젝트에서 해제",
+    "addToChat": "채팅에 추가",
+    "copyContext": "컨텍스트 복사",
+    "copied": "복사됨!",
+    "chatAbout": "이 문헌으로 대화",
+    "close": "닫기",
+    "cancel": "취소",
+    "delete": "삭제",
+    "deleteTitle": "참고문헌 삭제",
+    "deleteConfirm": "\"{{title}}\"을(를) 삭제하시겠습니까?",
+    "deleteWarning": "VibeLab에서만 삭제됩니다. Zotero에서는 삭제되지 않습니다.",
+    "deleteButton": "삭제",
+    "deleteSelected": "삭제 ({{count}})",
+    "deleteAll": "전체 삭제",
+    "deleteAllTitle": "모든 참고문헌 삭제",
+    "deleteAllConfirm": "{{count}}개의 참고문헌을 모두 삭제하시겠습니까?",
+    "deleteAllWarning": "VibeLab에서만 삭제됩니다. Zotero에서는 삭제되지 않습니다."
+  }
+}

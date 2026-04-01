@@ -13,6 +13,7 @@ compatible with the other search scripts (search_arxiv.py, etc.).
 import argparse
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -95,7 +96,11 @@ def search_via_twitter_cli(query: str) -> List[Dict]:
     cmd = [twitter_bin, "search", query, "--json"]
     logger.info("[X] Running: %s", " ".join(cmd))
 
-    result = subprocess.run(cmd, capture_output=True, timeout=120)
+    # Strip __PYVENV_LAUNCHER__ so uv-installed CLIs find the right stdlib
+    env = os.environ.copy()
+    env.pop("__PYVENV_LAUNCHER__", None)
+
+    result = subprocess.run(cmd, capture_output=True, timeout=120, env=env)
 
     if result.returncode != 0:
         logger.error("[X] CLI exited %d: %s", result.returncode, result.stderr.decode(errors="replace"))

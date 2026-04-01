@@ -1,4 +1,8 @@
 {
+  "status": {
+    "thinking": "Thinking...",
+    "runningCode": "Running code"
+  },
   "codeBlock": {
     "copy": "Copy",
     "copied": "Copied",
@@ -12,6 +16,10 @@
     "cursor": "Cursor",
     "codex": "Codex",
     "gemini": "Gemini"
+  },
+  "error": {
+    "retry": "Retry",
+    "usageLimitHint": "You can retry when your usage limit resets"
   },
   "tools": {
     "settings": "Tool Settings",
@@ -87,6 +95,10 @@
   "usageLimit": {
     "resetAt": "Claude usage limit reached. Your limit will reset at **{{time}} {{timezone}}** - {{date}}"
   },
+  "tokenUsage": {
+    "unavailable": "Ctx N/A",
+    "unavailableTitle": "Current context usage is unavailable for this session."
+  },
   "codex": {
     "permissionMode": "Permission Mode",
     "modes": {
@@ -108,8 +120,10 @@
     "placeholderDefault": "Type your message...",
     "disabled": "Input disabled",
     "attachFiles": "Attach files",
+    "attachReferences": "Attach references",
     "attachImages": "Attach images",
     "dropFilesHere": "Drop files here",
+    "attachmentOnlyFallback": "Please inspect the attached files and help me with them.",
     "send": "Send",
     "stop": "Stop",
     "hintText": {
@@ -157,6 +171,98 @@
     },
     "buttonTitle": "Thinking mode: {{mode}}"
   },
+  "codexReasoningEffort": {
+    "selector": {
+      "title": "Reasoning Effort",
+      "description": "Control how much deliberate reasoning Codex uses before responding",
+      "active": "Active",
+      "tip": "Higher reasoning effort usually improves hard-task quality, but increases latency"
+    },
+    "levels": {
+      "default": {
+        "name": "Default",
+        "description": "Use the model default reasoning effort"
+      },
+      "minimal": {
+        "name": "Minimal",
+        "description": "Fastest response with minimal deliberate reasoning"
+      },
+      "low": {
+        "name": "Low",
+        "description": "Light reasoning with lower latency"
+      },
+      "medium": {
+        "name": "Medium",
+        "description": "Balanced depth and latency"
+      },
+      "high": {
+        "name": "High",
+        "description": "More deliberate reasoning for harder tasks"
+      },
+      "xhigh": {
+        "name": "Max",
+        "description": "Maximum reasoning effort"
+      }
+    },
+    "buttonTitle": "Reasoning effort: {{level}}"
+  },
+  "geminiThinking": {
+    "selector": {
+      "title": "Thinking Strength",
+      "descriptionGemini3": "Gemini 3 models use official thinking levels",
+      "descriptionGemini25": "Gemini 2.5 models use fixed thinking-budget presets",
+      "active": "Active",
+      "tipGemini3": "Gemini 3 uses official thinking levels. Higher levels usually improve reasoning depth but increase latency.",
+      "tipGemini25": "Gemini 2.5 uses token budgets. Higher budgets allow more reasoning tokens before the final answer."
+    },
+    "modes": {
+      "default": {
+        "name": "Default",
+        "description": "Use Gemini CLI default behavior for this model"
+      },
+      "minimal": {
+        "name": "Minimal",
+        "description": "Lowest official thinking level"
+      },
+      "low": {
+        "name": "Low",
+        "description": "Lower latency with light reasoning"
+      },
+      "medium": {
+        "name": "Medium",
+        "description": "Balanced reasoning depth and latency"
+      },
+      "high": {
+        "name": "High",
+        "description": "Maximum official thinking level"
+      },
+      "dynamic": {
+        "name": "Dynamic",
+        "description": "Let the model adjust its thinking budget dynamically"
+      },
+      "off": {
+        "name": "Off",
+        "description": "Disable thinking"
+      },
+      "light": {
+        "name": "Light",
+        "description": "Use a small fixed thinking budget ({{budget}} tokens)"
+      },
+      "balanced": {
+        "name": "Balanced",
+        "description": "Use a medium thinking budget ({{budget}} tokens)"
+      },
+      "deep": {
+        "name": "Deep",
+        "description": "Use a large thinking budget ({{budget}} tokens)"
+      },
+      "max": {
+        "name": "Max",
+        "description": "Use the maximum supported thinking budget ({{budget}} tokens)"
+      }
+    },
+    "buttonTitle": "Thinking strength: {{mode}}"
+  },
   "providerSelection": {
     "title": "Choose Your AI Assistant",
     "description": "Select a provider to start a new conversation",
@@ -168,19 +274,25 @@
       "anthropic": "by Anthropic",
       "openai": "by OpenAI",
       "google": "by Google",
-      "cursorEditor": "AI Code Editor"
+      "cursorEditor": "AI Code Editor",
+      "openrouter": "Any Model via API",
+      "local": "Run on Your GPU"
     },
     "readyPrompt": {
       "claude": "Ready to use Claude with {{model}}. Start typing your message below.",
       "cursor": "Ready to use Cursor with {{model}}. Start typing your message below.",
       "gemini": "Ready to use Gemini with {{model}}. Start typing your message below.",
       "codex": "Ready to use Codex with {{model}}. Start typing your message below.",
+      "openrouter": "Ready to use OpenRouter with {{model}}. Start typing your message below.",
+      "local": "Ready to use Local GPU with {{model}}. Start typing your message below.",
       "default": "Select a provider above to begin"
     }
   },
   "session": {
     "mode": {
       "title": "Choose Session Type",
+      "badge_one": "{{count}} mode",
+      "badge_other": "{{count}} modes",
       "subtitle": "Decide whether this session should drive research planning or stay focused on workspace questions.",
       "research": "Research",
       "workspaceQa": "Files Q&A",
@@ -188,6 +300,7 @@
       "researchDescription": "Use the project research workflow, onboarding prompts, and pipeline guidance.",
       "workspaceQaTitle": "Workspace Q&A",
       "workspaceQaDescription": "Ask about files, modules, and implementation details without triggering the research workflow.",
+      "workspaceQaGreeting": "Ask about any file, module, or implementation detail in this workspace. I will stay focused on code and project structure unless you explicitly ask to start research planning.",
       "workspaceQaHint": "This session stays focused on repository questions unless you explicitly ask to start research planning."
     },
     "continue": {
@@ -207,6 +320,54 @@
       "loadingAll": "Loading all messages...",
       "allLoaded": "All messages loaded",
       "perfWarning": "All messages loaded — scrolling may be slower. Click \"Scroll to bottom\" to restore performance."
+    }
+  },
+  "sessionContext": {
+    "title": "Session Context",
+    "description": "Files, tasks, and outputs actually observed in this session trace.",
+    "codexNotice": "Codex visibility is partial and depends on the tool events currently exposed by the runtime.",
+    "traceError": "Failed to load the full session trace. Showing live in-memory messages only.",
+    "stats": {
+      "mode": "Mode",
+      "provider": "Provider",
+      "contextFiles": "Context Files",
+      "unreadOutputs": "Unread Outputs"
+    },
+    "sections": {
+      "injectedContext": "Injected Context",
+      "taskContext": "Task Context",
+      "reviewQueue": "Review Queue",
+      "fileReview": "File Review"
+    },
+    "actions": {
+      "collapse": "Collapse context sidebar",
+      "expand": "Expand context sidebar",
+      "resize": "Drag to resize"
+    },
+    "filters": {
+      "all": "All",
+      "unread": "Unread",
+      "reviewed": "Reviewed"
+    },
+    "kinds": {
+      "task": "task",
+      "todo": "todo",
+      "skill": "skill",
+      "directory": "directory"
+    },
+    "empty": {
+      "injectedContext": "No file or directory context has been observed yet.",
+      "taskContext": "No task or todo context captured yet.",
+      "reviewQueue": "No generated files found for this session yet."
+    },
+    "preview": {
+      "titleFallback": "Preview",
+      "selectFile": "Select a file to preview",
+      "open": "Open",
+      "loading": "Loading preview...",
+      "loadError": "Failed to load preview. {{error}}",
+      "selectToReview": "Select a file to review",
+      "unreadHint": "Outputs stay unread until you open them from the review queue."
     }
   },
   "shell": {
@@ -234,7 +395,17 @@
     "runCommand": "Run {{command}} in {{projectName}}",
     "openTerminal": "Open terminal in {{projectName}}",
     "startCli": "Starting Claude CLI in {{projectName}}",
+    "historyEdit": {
+      "action": "Edit message history",
+      "promptTitle": "Continue history edits in Shell",
+      "promptDescription": "Web Chat does not rewrite message history directly. To use the model's native edit, rewind, or retry flow, continue in Shell.",
+      "cancel": "Cancel",
+      "confirm": "Open Shell",
+      "bannerTitle": "This session is now open in Shell",
+      "bannerDescription": "Use the model's native history edit, rewind, or retry flow here. Web Chat only displays the conversation and does not rewrite history directly."
+    },
     "workspace": {
+      "currentSession": "Current Session",
       "newShell": "New shell",
       "tabTitle": "Shell {{index}}",
       "closeShell": "Close {{title}}"
@@ -324,6 +495,10 @@
         "title": "Review a draft",
         "description": "Run a reviewer-style check for methods, evidence, references, and writing quality."
       },
+      "rebuttalResponse": {
+        "title": "Write a rebuttal",
+        "description": "Respond to reviewer comments with venue-aware strategies, safety gates, and issue tracking."
+      },
       "grantProposal": {
         "title": "Grant proposal",
         "description": "Plan, draft, revise, or resubmit a faculty funding proposal for NSF, NIH, DOE, DARPA, NASA, or NSFC."
@@ -333,6 +508,11 @@
         "description": "Turn the paper into slides, narration scripts, TTS audio, and a demo video."
       }
     }
+  },
+  "attachedPrompt": {
+    "showPrompt": "Show prompt",
+    "hidePrompt": "Hide prompt",
+    "remove": "Remove"
   },
   "pipelineOnboarding": {
     "noBrief": {

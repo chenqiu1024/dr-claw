@@ -280,6 +280,22 @@
     "loading": "로딩 중...",
     "version": {
       "updateAvailable": "업데이트 가능: v{{version}}"
+    },
+    "zotero": {
+      "title": "Zotero 연동",
+      "addButton": "설정",
+      "description": "Zotero에 연결하여 문헌 라이브러리를 동기화합니다. 로컬 앱은 자동 감지됩니다. 클라우드 접근을 위해 API 키와 사용자 ID를 제공하세요.",
+      "connected": "{{mode}}으로 연결됨",
+      "notConnected": "연결 안 됨 — Zotero 데스크톱을 실행하거나 아래에서 API 키를 설정하세요",
+      "apiDisabled": "Zotero가 실행 중이지만 로컬 API 접근이 비활성화되어 있습니다. Zotero → 설정 → 고급에서 활성화하세요.",
+      "empty": "Zotero Web API 자격 증명이 설정되지 않았습니다. 로컬 앱이 자동 감지됩니다.",
+      "confirmDelete": "이 Zotero 자격 증명을 삭제하시겠습니까?",
+      "form": {
+        "apiKeyPlaceholder": "Zotero API 키",
+        "userIdPlaceholder": "Zotero 사용자 ID (숫자)",
+        "saveButton": "저장",
+        "howToCreate": "zotero.org/settings/keys에서 Zotero API 키 생성"
+      }
     }
   },
   "tasks": {
@@ -325,6 +341,12 @@
       },
       "gemini": {
         "description": "Google Gemini AI CLI 어시스턴트"
+      },
+      "openrouter": {
+        "description": "OpenRouter API를 통해 모든 모델로 라우팅"
+      },
+      "local": {
+        "description": "로컬 GPU에서 오픈소스 모델 실행"
       }
     },
     "connectionStatus": "연결 상태",

@@ -115,7 +115,8 @@
       "reports": "调研报告",
       "graphs": "文献图谱",
       "notes": "调研笔记",
-      "tasks": "阶段任务"
+      "tasks": "阶段任务",
+      "references": "文献库"
     },
     "errors": {
       "loadFailed": "加载该项目的调研数据失败。"
@@ -378,7 +379,7 @@
     "updateFailed": "更新失败",
     "buttons": {
       "close": "关闭",
-      "later": "稍后",
+      "later": "稍后提醒",
       "copyCommand": "复制命令",
       "updateNow": "立即更新",
       "updating": "更新中..."

@@ -118,7 +118,15 @@ def _run_xhs_cli(args: List[str], timeout: int = 120) -> Optional[Dict]:
     cmd = [xhs_bin] + args + ["--json"]
     logger.info("[XHS] Running: %s", " ".join(cmd))
 
-    result = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    # The xhs CLI uses its own Python interpreter (via shebang).  When this
+    # script is run by a *different* Python (e.g. 3.8), macOS sets
+    # __PYVENV_LAUNCHER__ to the parent interpreter, which causes the child
+    # Python to look for its stdlib in the wrong prefix and fail with
+    # "No module named 'encodings'".  Stripping this variable fixes it.
+    env = os.environ.copy()
+    env.pop("__PYVENV_LAUNCHER__", None)
+
+    result = subprocess.run(cmd, capture_output=True, timeout=timeout, env=env)
 
     if result.returncode != 0:
         logger.error("[XHS] CLI exited %d: %s", result.returncode, result.stderr.decode(errors="replace"))

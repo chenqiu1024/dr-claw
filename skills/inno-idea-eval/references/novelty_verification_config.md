@@ -15,13 +15,20 @@
 Following the `inno-deep-research` precedent, invoke the shared search script:
 
 ```bash
-python3 ~/.claude/skills/searching-ai-papers/scripts/search_ai_papers.py \
+python3 <searching-ai-papers-skill-directory>/scripts/search_ai_papers.py \
   --query "<query>" \
   --sources arxiv,semantic_scholar,openalex \
   --max-results 10 \
   --year-from <current_year - YEAR_WINDOW> \
   --format json
 ```
+
+To resolve `<searching-ai-papers-skill-directory>`:
+1. Look for a sibling skill directory named `searching-ai-papers` alongside the other installed skills (e.g., next to this skill's own directory).
+2. Fallback: use `find` or `glob` to locate `searching-ai-papers/scripts/search_ai_papers.py` under common skill installation roots (`~/.claude/skills/`, `~/.codex/skills/`, or the parent of this skill's directory).
+3. If the script cannot be found, report the missing dependency to the user and skip the search step.
+
+Do not hardcode `~/.claude/...` or any other user-specific absolute path.
 
 Run once per query (4 invocations total). Collect all results and cross-deduplicate by title similarity before analysis.
 

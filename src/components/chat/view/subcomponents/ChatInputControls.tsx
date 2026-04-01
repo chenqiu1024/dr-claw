@@ -1,16 +1,28 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import ThinkingModeSelector from './ThinkingModeSelector';
+import CodexReasoningEffortSelector from './CodexReasoningEffortSelector';
+import GeminiThinkingSelector from './GeminiThinkingSelector';
 import TokenUsagePie from './TokenUsagePie';
-import type { PermissionMode, Provider } from '../../types/types';
+import type { CodexReasoningEffortId } from '../../constants/codexReasoningEfforts';
+import { supportsExplicitCodexReasoningEffort } from '../../constants/codexReasoningSupport';
+import type { GeminiThinkingModeId } from '../../../../../shared/geminiThinkingSupport';
+import { supportsExplicitGeminiThinkingMode } from '../../../../../shared/geminiThinkingSupport';
+import type { PermissionMode, Provider, TokenBudget } from '../../types/types';
 
 interface ChatInputControlsProps {
   permissionMode: PermissionMode | string;
   onModeSwitch: () => void;
   provider: Provider | string;
+  codexModel: string;
+  geminiModel: string;
   thinkingMode: string;
   setThinkingMode: React.Dispatch<React.SetStateAction<string>>;
-  tokenBudget: { used?: number; total?: number } | null;
+  codexReasoningEffort: CodexReasoningEffortId;
+  setCodexReasoningEffort: React.Dispatch<React.SetStateAction<CodexReasoningEffortId>>;
+  geminiThinkingMode: GeminiThinkingModeId;
+  setGeminiThinkingMode: React.Dispatch<React.SetStateAction<GeminiThinkingModeId>>;
+  tokenBudget: TokenBudget | null;
   slashCommandsCount: number;
   onToggleCommandMenu: () => void;
   hasInput: boolean;
@@ -24,8 +36,14 @@ export default function ChatInputControls({
   permissionMode,
   onModeSwitch,
   provider,
+  codexModel,
+  geminiModel,
   thinkingMode,
   setThinkingMode,
+  codexReasoningEffort,
+  setCodexReasoningEffort,
+  geminiThinkingMode,
+  setGeminiThinkingMode,
   tokenBudget,
   slashCommandsCount,
   onToggleCommandMenu,
@@ -78,7 +96,32 @@ export default function ChatInputControls({
         <ThinkingModeSelector selectedMode={thinkingMode} onModeChange={setThinkingMode} onClose={() => {}} className="" />
       )}
 
-      <TokenUsagePie used={tokenBudget?.used || 0} total={tokenBudget?.total || parseInt(import.meta.env.VITE_CONTEXT_WINDOW) || 160000} />
+      {provider === 'codex' && supportsExplicitCodexReasoningEffort(codexModel) && (
+        <CodexReasoningEffortSelector
+          model={codexModel}
+          selectedEffort={codexReasoningEffort}
+          onEffortChange={setCodexReasoningEffort}
+          onClose={() => {}}
+          className=""
+        />
+      )}
+
+      {provider === 'gemini' && supportsExplicitGeminiThinkingMode(geminiModel) && (
+        <GeminiThinkingSelector
+          model={geminiModel}
+          selectedMode={geminiThinkingMode}
+          onModeChange={setGeminiThinkingMode}
+          onClose={() => {}}
+          className=""
+        />
+      )}
+
+      <TokenUsagePie
+        used={tokenBudget?.used}
+        total={tokenBudget?.total || parseInt(import.meta.env.VITE_CONTEXT_WINDOW) || 160000}
+        unsupportedContext={tokenBudget?.unsupportedContext}
+        message={tokenBudget?.message}
+      />
 
       <button
         type="button"

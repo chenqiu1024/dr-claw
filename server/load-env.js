@@ -61,3 +61,11 @@ try {
 if (!process.env.DATABASE_PATH) {
   process.env.DATABASE_PATH = resolveDefaultDatabasePath();
 }
+
+// Migrate legacy ANTHROPIC_AUTH_TOKEN → ANTHROPIC_API_KEY.
+// ANTHROPIC_AUTH_TOKEN was incorrectly used to store API keys; the Claude Code
+// SDK expects ANTHROPIC_API_KEY (sent as x-api-key) for direct API key auth.
+if (process.env.ANTHROPIC_AUTH_TOKEN && !process.env.ANTHROPIC_API_KEY) {
+  process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_AUTH_TOKEN;
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
+}

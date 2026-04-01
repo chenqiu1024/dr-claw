@@ -18,6 +18,14 @@ const agentConfig = {
     name: 'Gemini',
     color: 'blue',
   },
+  openrouter: {
+    name: 'OpenRouter',
+    color: 'purple',
+  },
+  local: {
+    name: 'Local GPU',
+    color: 'green',
+  },
 };
 
 const colorClasses = {
@@ -38,6 +46,12 @@ const colorClasses = {
     borderBottom: 'border-b-gray-700 dark:border-b-gray-300',
     bg: 'bg-gray-100 dark:bg-gray-800/50',
     dot: 'bg-gray-700 dark:bg-gray-300',
+  },
+  green: {
+    border: 'border-l-emerald-500 md:border-l-emerald-500',
+    borderBottom: 'border-b-emerald-500',
+    bg: 'bg-emerald-50 dark:bg-emerald-900/20',
+    dot: 'bg-emerald-500',
   },
 };
 
